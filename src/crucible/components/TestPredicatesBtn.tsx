@@ -20,12 +20,12 @@ function TestPredicatesBtn({ testID }: Props) {
   async function fetchAndSetPredicates(testID: number) {
     const predicates: PredInstanceWithParams[] =
       await window.electronAPI.getPredicates(testID);
-    setPredicates(predicates);
+    setPredicates(predicates ?? []);
   }
 
   async function fetchAndSetAtoms(testID: number) {
     const test: TestWithCanvas = await window.electronAPI.readTest(testID);
-    setAtoms(test.atoms);
+    setAtoms(test?.atoms ?? []);
   }
 
   useEffect(() => {

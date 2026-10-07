@@ -102,7 +102,7 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
         return undefined;
       },
     }),
-    [atom]
+    [atom, acceptTypes]
   );
 
   async function addNewConnection({

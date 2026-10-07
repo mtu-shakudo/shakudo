@@ -3,7 +3,7 @@ import { Box, Group } from "@mantine/core";
 import Canvas from "./Canvas";
 
 import type { Test } from "@prisma/client";
-//import TestPredicatesBtn from "./TestPredicatesBtn";
+import TestPredicatesBtn from "./TestPredicatesBtn";
 import TestPlayBtn from "./TestPlayBtn";
 //import Benchmark from "./Benchmark";
 
@@ -25,6 +25,7 @@ function TabContent({ test, projectID }: Props) {
         }}
       >
         <TestPlayBtn projectID={projectID} testID={test.id} disabled={false} />
+        <TestPredicatesBtn testID={test.id} />
         {/*<Benchmark disabled={false} projectID={projectID} testID={test.id} />*/}
       </Group>
       <Box
