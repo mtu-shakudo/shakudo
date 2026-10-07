@@ -3,6 +3,7 @@ import * as path from "path";
 import * as isDev from "electron-is-dev";
 import * as fs from "fs";
 import {AlloyIntegration} from "./alloy/AlloyIntegration";
+import { initCrucibleDb, prisma, crucibleProjectID, crucibleAlloyPath } from "./crucibleDb";
 
 /**
  * If move back to react, uncomment below for dev tools.
@@ -100,6 +101,20 @@ async function createWindow() {
 						win?.webContents.send("cmd-compile");
 					}
 				},
+				{
+					label: "Work",
+					accelerator: "CmdOrCtrl+Shift+W",
+					click: async () => {
+						win?.webContents.send("cmd-work");
+					}
+				},
+				{
+					label: "Test",
+					accelerator: "CmdOrCtrl+Shift+T",
+					click: async () => {
+						win?.webContents.send("cmd-test");
+					}
+				}
 			]
 		},
 		// { role: "editMenu" }
@@ -225,10 +240,17 @@ async function createWindow() {
 
 }
 
+ipcMain.on("get-active-project", (event) => {
+	event.sender.send("get-active-project-resp", crucibleProjectID);
+});
+
 /**
  * Handle when electron is ready to create a window.
  */
-app.on("ready", createWindow);
+app.on("ready", async () => {
+	await initCrucibleDb();
+	await createWindow();
+});
 
 /**
  * Handle when all windows are closed.
@@ -246,4 +268,12 @@ app.on("activate", () => {
 	if (win === null) {
 		createWindow().catch(console.error);
 	}
+});
+
+app.on("before-quit", () => {
+	prisma?.$disconnect();
+});
+
+ipcMain.handle("crucible-sync", async (event, text: string) => {
+	fs.writeFileSync(crucibleAlloyPath(), text);
 });

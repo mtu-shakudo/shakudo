@@ -6,7 +6,9 @@
  */
 
 import * as ChildProcess from "child_process";
-import {BrowserWindow} from "electron";
+import * as Path from "path";
+import * as FS from "fs";
+import {BrowserWindow, app} from "electron";
 
 /**
  * This class handles half of the integration with Alloy. The rest can be found from the shakudo-integration repo.
@@ -18,6 +20,7 @@ export class AlloyIntegration {
 	private readonly _window: BrowserWindow;
 	private readonly _cache: string[];
 
+
 	/**
 	 * Create a new alloy integration for a specific file.
 	 * @param path The path to the alloy file.
@@ -26,10 +29,34 @@ export class AlloyIntegration {
 	public constructor(path: string, window: BrowserWindow) {
 		this._window = window;
 		this._cache = [];
-		this._process = ChildProcess.spawn("java", ["-jar", __dirname + "/blockloy-alloy-integration.jar", path]);
+
+		// Candidate locations: next to this file, in an alloy/ subfolder, or in packaged resources
+		const candidates = [
+			Path.join(__dirname, "blockly-alloy-integration.jar"),
+			Path.join(__dirname, "alloy", "blockly-alloy-integration.jar"),
+			Path.join(process.resourcesPath || "", "alloy", "blockly-alloy-integration.jar"),
+		];
+		const jar = candidates.find(p => FS.existsSync(p));
+
+		console.log("__dirname:", __dirname);
+		console.log("jar candidates:", candidates, "chosen:", jar);
+
+		if (!jar) {
+			throw new Error("Could not find blockly-alloy-integration.jar. Looked in:\n" + candidates.join("\n"));
+		}
+
+		this._process = ChildProcess.spawn("java", ["-jar", jar, path]);
+		this._process.on("error", this.onSpawnError.bind(this));
 		this._process.stderr.on("data", this.onStdErr.bind(this));
 		this._process.stdout.on("data", this.onStdOut.bind(this));
 		this._process.on("close", this.onClose.bind(this));
+	}
+
+	// on error when trying to open jar file
+	private onSpawnError(err: Error): void {
+		// Fires if `java` isn't on PATH, among other things
+		console.error("Failed to start java:", err);
+		this._window.webContents.send("handle-error-run", String(err));
 	}
 
 	/**

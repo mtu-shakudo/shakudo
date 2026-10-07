@@ -11,6 +11,7 @@
 import CodeMirror from "codemirror";
 import {BlocklyParse} from "./BlocklyParser";
 import Blockly from "blockly";
+import { mountCrucible } from "./crucible/mount";
 import {setupBlocks, setupToolboxContents, setupToolboxWorkspace, Alloy, op_internal_translate,
 					binding_blocks, set_op_blocks,  quant_list, un_op_list, bin_op_list, compare_op_list, set_bin_op_list} from "./alloy_generator"
 
@@ -322,10 +323,10 @@ window.onload = () => {
   };
 
 	/* used below, to check for incorrectly-bound variables */
-//	function descend_tree_bounds__foundItException(blk) {
-//		this.block = blk;
-//		this.name = 'FoundItException';
-//	}
+ //	function descend_tree_bounds__foundItException(blk) {
+ //		this.block = blk;
+ //		this.name = 'FoundItException';
+ //	}
 	function descend_tree_bounds__unboundException(blk) {
 		this.block = blk;
 		this.name = 'UnboundVarException';
@@ -497,9 +498,23 @@ window.onload = () => {
 		editor.replaceRange(tab_block.dispLines.join("\n"), place.from, place.to);
 	});
 
+	const crucible_div = document.getElementById("crucible");
+	if (!crucible_div) throw new Error("Error: crucible div not found");
+	else mountCrucible(crucible_div);
 
+	const open_crucible = () => {
+		(document.activeElement as HTMLElement | null)?.blur(); // stop typing into the hidden editor
+		crucible_div.classList.add("show");
+	}
 
+	const open_editor = () => {
+		crucible_div.classList.remove("show");
+		editor.refresh();
+		editor.focus();
+	};
 
+    ipcRenderer.on("cmd-test", open_crucible);
+	ipcRenderer.on("cmd-work", open_editor);
 
 	/* Misc */
 
