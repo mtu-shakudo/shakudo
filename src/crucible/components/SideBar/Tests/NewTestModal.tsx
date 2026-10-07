@@ -1,7 +1,7 @@
 import React from "react";
 import { Button, Modal, TextInput } from "@mantine/core";
 import { IconTag } from "@tabler/icons";
-import { Test } from "@prisma/client";
+import type { Test } from "@prisma/client";
 import { useForm } from "@mantine/form";
 
 interface Props {

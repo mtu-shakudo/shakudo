@@ -17,9 +17,25 @@ const atomSources = [
 	},
 ];
 
+let tests: any[] = [
+	{ id: 1, name: "Sample Test", projectID: PROJECT_ID, testFile: "", atomCount: 0, tabIsOpen: false },
+];
+
 const api: Record<string, any> = {
 	getOpenProject: async () => PROJECT_ID,
 	getAtomSources: async (_projectID: number) => atomSources,
+	getTests: async (_projectID: number) => [
+		{ id: 1, name: "Sample Test", projectID: PROJECT_ID, testFile: "", atomCount: 0, tabIsOpen: false },
+	],
+	createNewTest: async ({ testName }: { testName: string }) => {
+		if (tests.some((t) => t.name === testName)) {
+			// Same shape as the Zod issues the real main process returns
+			return { success: false, error: [{ path: ["testName"], message: "A test with that name already exists" }] };
+		}
+		const test = { id: Date.now(), name: testName, projectID: PROJECT_ID, testFile: "", atomCount: 0, tabIsOpen: false };
+		tests = [...tests, test];
+		return { success: true, error: null, test };
+	},
 };
 
 // Any method not listed above warns in DevTools instead of crashing.
@@ -32,3 +48,4 @@ const api: Record<string, any> = {
 		};
 	},
 });
+

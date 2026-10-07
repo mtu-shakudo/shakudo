@@ -10,6 +10,7 @@
 		"@element-ts/chlorine": "latest",
 		"@emotion/react": "11",
 		"@mantine/core": "5",
+		"@mantine/form": "5.9.6",
 		"@mantine/hooks": "5",
 		"@mantine/notifications": "5",
 		"@material-ui/core": "latest",

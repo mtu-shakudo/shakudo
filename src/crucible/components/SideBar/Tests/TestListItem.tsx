@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {ActionIcon, Container, Grid, Group, Stack, Text} from "@mantine/core";
 import { IconPlayerPlay, IconSettings } from "@tabler/icons";
-import { Test } from "@prisma/client";
+import type { Test } from "@prisma/client";
 
 interface Props {
   test: Test;

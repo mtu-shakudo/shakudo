@@ -92,4 +92,5 @@ export default constants;
 export const {
 	SIDEBAR_HEIGHT,
 	ATOM_SOURCE,
+  SIDEBAR_WIDTH,
 } = constants;
