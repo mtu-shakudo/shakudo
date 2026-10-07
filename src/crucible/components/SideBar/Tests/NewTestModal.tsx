@@ -48,6 +48,7 @@ function NewTestModal({
 
   return (
     <Modal
+      target="#crucible-portals"
       opened={opened}
       onClose={() => setModalOpened(false)}
       title="Create a New Test"

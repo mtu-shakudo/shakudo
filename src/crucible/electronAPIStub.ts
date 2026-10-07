@@ -6,12 +6,12 @@ const PROJECT_ID = 1;
 
 const atomSources = [
 	{
-		id: 1, projectID: PROJECT_ID, label: "this/Person", color: "#4DABF7", shape: "rectangle",
+		id: 1, projectID: PROJECT_ID, label: "this/Kitteh", color: "#4DABF7", shape: "rectangle",
 		isAbstract: false, isEnum: false, isLone: false, isOne: false, isSome: false,
 		fromRelations: [], isChildOf: [],
 	},
 	{
-		id: 2, projectID: PROJECT_ID, label: "this/Book", color: "#69DB7C", shape: "rectangle",
+		id: 2, projectID: PROJECT_ID, label: "this/Imposter", color: "#69DB7C", shape: "rectangle",
 		isAbstract: false, isEnum: false, isLone: false, isOne: false, isSome: false,
 		fromRelations: [], isChildOf: [],
 	},
@@ -24,9 +24,7 @@ let tests: any[] = [
 const api: Record<string, any> = {
 	getOpenProject: async () => PROJECT_ID,
 	getAtomSources: async (_projectID: number) => atomSources,
-	getTests: async (_projectID: number) => [
-		{ id: 1, name: "Sample Test", projectID: PROJECT_ID, testFile: "", atomCount: 0, tabIsOpen: false },
-	],
+	getTests: async (_projectID: number) => [...tests],
 	createNewTest: async ({ testName }: { testName: string }) => {
 		if (tests.some((t) => t.name === testName)) {
 			// Same shape as the Zod issues the real main process returns

@@ -499,8 +499,9 @@ window.onload = () => {
 	});
 
 	const crucible_div = document.getElementById("crucible");
-	if (!crucible_div) throw new Error("Error: crucible div not found");
-	else mountCrucible(crucible_div);
+	const crucible_root = document.getElementById("crucible-root")
+	if (!crucible_div || !crucible_root) throw new Error("Error: crucible div not found");
+	else mountCrucible(crucible_root);
 
 	const open_crucible = () => {
 		(document.activeElement as HTMLElement | null)?.blur(); // stop typing into the hidden editor

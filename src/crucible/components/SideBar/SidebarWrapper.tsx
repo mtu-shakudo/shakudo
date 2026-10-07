@@ -7,7 +7,6 @@ import {
 import React, { useState } from "react";
 import AtomsSidebarTab from "./AtomsSidebarTab";
 import TestsSidebarTab from "./Tests/TestsSidebarTab";
-import SettingsSidebarTab from "./SettingsSidebarTab";
 
 interface Props {
   projectID: number;
@@ -28,11 +27,6 @@ function SidebarWrapper({ projectID }: Props) {
       label: "tests",
       drawerContent: <TestsSidebarTab projectID={projectID} />,
     },
-    // {
-    //   icon: IconAdjustmentsHorizontal,
-    //   label: "settings",
-    //   drawerContent: <SettingsSidebarTab projectID={projectID} />,
-    // },
   ];
 
   function handleClick(index: number) {
@@ -85,7 +79,8 @@ function SidebarWrapper({ projectID }: Props) {
         {items}
       </Stack>
       <Drawer
-        zIndex={60}
+        target="#crucible-portals"
+        zIndex={99}
         opened={drawerOpen}
         withOverlay={false}
         size={400}

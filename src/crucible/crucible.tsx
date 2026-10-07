@@ -27,8 +27,9 @@ export default function Crucible() {
                     })}
                     navbar={
                         <Navbar
+                            zIndex={100}
                             width={{ base: 84 }}
-                            sx={(theme) => ({ backgroundColor: theme.white, height: "100%" })}
+                            styles={(theme) => ({ backgroundColor: theme.white, height: "100%" })}
                         >
                             {projectID ? <SidebarWrapper projectID={projectID} /> : <></>}
                         </Navbar>

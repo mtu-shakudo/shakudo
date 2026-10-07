@@ -89,6 +89,7 @@ const constants = {
 
 export default constants;
 
+// update exports as components are pulled in
 export const {
 	SIDEBAR_HEIGHT,
 	ATOM_SOURCE,
