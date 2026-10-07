@@ -94,4 +94,8 @@ export const {
 	SIDEBAR_HEIGHT,
 	ATOM_SOURCE,
   SIDEBAR_WIDTH,
+  ATOM,
+  ATOM_HEIGHT,
+  ATOM_WIDTH,
+  CONNECTION,
 } = constants;

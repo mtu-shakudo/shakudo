@@ -21,6 +21,11 @@ let tests: any[] = [
 	{ id: 1, name: "Sample Test", projectID: PROJECT_ID, testFile: "", atomCount: 0, tabIsOpen: false },
 ];
 
+let activeTab = "";
+
+const tabListeners: Function[] = [];
+const fireTabsUpdate = () => tabListeners.forEach((cb) => cb());
+
 const api: Record<string, any> = {
 	getOpenProject: async () => PROJECT_ID,
 	getAtomSources: async (_projectID: number) => atomSources,
@@ -34,6 +39,26 @@ const api: Record<string, any> = {
 		tests = [...tests, test];
 		return { success: true, error: null, test };
 	},
+	getActiveTest: async (_projectID: number) => activeTab,
+	setActiveTest: ({ testName }: { testName: string }) => {
+		activeTab = testName;
+		fireTabsUpdate();
+	},
+	openTest: async ({ testID }: { testID: number }) => {
+		tests = tests.map((t) => (t.id === testID ? { ...t, tabIsOpen: true } : t));
+		activeTab = tests.find((t) => t.id === testID)?.name ?? activeTab;
+		fireTabsUpdate();
+		return { success: true };
+	},
+	closeTest: async ({ testID }: { testID: number }) => {
+		tests = tests.map((t) => (t.id === testID ? { ...t, tabIsOpen: false } : t));
+		const stillOpen = tests.find((t) => t.tabIsOpen);
+		activeTab = stillOpen ? stillOpen.name : "";
+		fireTabsUpdate();
+		return { success: true };
+	},
+	listenForTabsChange: (cb: Function) => { tabListeners.push(cb); },
+	runTest: async () => "Pass",
 };
 
 // Any method not listed above warns in DevTools instead of crashing.

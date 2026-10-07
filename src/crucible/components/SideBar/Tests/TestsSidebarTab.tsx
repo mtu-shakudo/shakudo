@@ -16,9 +16,10 @@ import { SIDEBAR_WIDTH } from "../../../utils/constants";
 
 interface Props {
   projectID: number;
+  onTestOpened?: () => void;
 }
 
-function TestsSidebarTab({ projectID }: Props) {
+function TestsSidebarTab({ projectID, onTestOpened }: Props) {
   const [tests, setTests] = useState<Test[]>([]);
   const [modalOpened, setModalOpened] = useState(false);
 
@@ -33,6 +34,7 @@ function TestsSidebarTab({ projectID }: Props) {
   // TODO: Determine type of testObj
   function handleRowClick(testID: number, projectID: number) {
     window.electronAPI.openTest({ testID, projectID });
+    onTestOpened?.();
   }
 
   return (

@@ -25,7 +25,7 @@ function SidebarWrapper({ projectID }: Props) {
     {
       icon: IconTestPipe,
       label: "tests",
-      drawerContent: <TestsSidebarTab projectID={projectID} />,
+      drawerContent: <TestsSidebarTab projectID={projectID} onTestOpened={handleDrawerClose} />,
     },
   ];
 
