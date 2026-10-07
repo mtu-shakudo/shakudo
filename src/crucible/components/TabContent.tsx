@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Group } from "@mantine/core";
-//import Canvas from "./Canvas";
+import Canvas from "./Canvas";
 
 import type { Test } from "@prisma/client";
 //import TestPredicatesBtn from "./TestPredicatesBtn";
@@ -37,7 +37,7 @@ function TabContent({ test, projectID }: Props) {
           border: "solid 1px gray",
         })}
       >
-        <div>Canvas here</div>
+        <Canvas testID={test.id} />
       </Box>
     </>
   );

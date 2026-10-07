@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useDrop } from "react-dnd";
 import Xarrow from "react-xarrows";
 import { showNotification } from "@mantine/notifications";
@@ -15,7 +15,7 @@ import type { Atom, AtomSource, Connection } from "@prisma/client";
 import { ATOM, ATOM_HEIGHT, ATOM_SOURCE, ATOM_WIDTH } from "../utils/constants";
 import { AtomContents } from "./Atom/AtomContents";
 //import { Arrow } from "react-absolute-svg-arrows";
-import { z } from "zod";
+//import { z } from "zod";
 
 interface Props {
   testID: number;
@@ -36,6 +36,8 @@ function Canvas({ testID }: Props) {
   const [loading, setLoading] = useState<boolean>(true);
   const [quickInsertData, setQuickInsertData] = useState([]);
   const theme = useMantineTheme();
+
+  const canvasRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     window.electronAPI.listenForCanvasChange((_event: any, value: any) => {
@@ -140,12 +142,13 @@ function Canvas({ testID }: Props) {
             if (monitor.getItemType() === ATOM_SOURCE) {
               console.log("New atom dragged.");
               const clickCoords = monitor.getClientOffset();
-              if (clickCoords) {
+              const rect = canvasRef.current?.getBoundingClientRect();
+              if (clickCoords && rect) {
                 console.log("Item ", item);
                 addNewAtom({
                   sourceAtomID: item.data.id,
-                  top: clickCoords.y,
-                  left: clickCoords.x,
+                  top: Math.round(clickCoords.y - rect.top),
+                  left: Math.round(clickCoords.x - rect.left),
                 });
               }
             }
@@ -160,7 +163,10 @@ function Canvas({ testID }: Props) {
   if (canvasItems) {
     return (
       <div
-        ref={drop}
+        ref={(node) => {
+          canvasRef.current = node;
+          drop(node);
+        }}
         className={"canvas"}
         // onContextMenu={(e) => {
         //   e.preventDefault();
@@ -234,7 +240,15 @@ function Canvas({ testID }: Props) {
     );
   } else {
     // Loading items
-    return <div ref={drop} className={"canvas"}></div>;
+    return (
+      <div 
+        ref={(node) => {
+          canvasRef.current = node;
+          drop(node);
+        }} 
+        className={"canvas"}>
+      </div>
+    );
   }
 }
 

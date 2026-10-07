@@ -26,6 +26,13 @@ let activeTab = "";
 const tabListeners: Function[] = [];
 const fireTabsUpdate = () => tabListeners.forEach((cb) => cb());
 
+const canvasListeners: Function[] = [];
+
+let atoms: any[] = [];
+let nextAtomID = 1;
+
+const fireCanvasUpdate = () => canvasListeners.forEach((cb) => cb({}, undefined));
+
 const api: Record<string, any> = {
 	getOpenProject: async () => PROJECT_ID,
 	getAtomSources: async (_projectID: number) => atomSources,
@@ -58,7 +65,40 @@ const api: Record<string, any> = {
 		return { success: true };
 	},
 	listenForTabsChange: (cb: Function) => { tabListeners.push(cb); },
-	runTest: async () => "Pass",
+	readTest: async (id: number) => ({
+		...(tests.find((t) => t.id === id) ?? {}),
+		atoms: atoms.filter((a) => a.testID === id),
+		connections: [],
+	}),
+	listenForCanvasChange: (cb: Function) => { canvasListeners.push(cb); },
+	testCanAddAtom: async () => ({ success: true }),
+	testAddAtom: ({ testID, sourceAtomID, top, left }: any) => {
+		const src = atomSources.find((s) => s.id === sourceAtomID);
+		const test = tests.find((t) => t.id === testID);
+		if (!src || !test) return;
+		atoms = [...atoms, {
+			id: nextAtomID++, testID, srcID: sourceAtomID, top, left,
+			nickname: `${src.label.split("/")[1]}${test.atomCount}`,
+			srcAtom: { ...src, isParentOf: [], toRelations: [] },
+			connsFrom: [], connsTo: [],
+		}];
+		tests = tests.map((t) => (t.id === testID ? { ...t, atomCount: t.atomCount + 1 } : t));
+		fireCanvasUpdate();
+	},
+
+	updateAtom: ({ atomID, left, top }: any) => {
+		atoms = atoms.map((a) => (a.id === atomID ? { ...a, left, top } : a));
+		fireCanvasUpdate();
+	},
+	deleteAtom: async (atomID: number) => {
+		atoms = atoms.filter((a) => a.id !== atomID);
+		fireCanvasUpdate();
+		return { success: true, error: null };
+	},
+	getRelationsToAtom: async () => [],
+	getAtomParents: async () => [],
+	getAtomChildren: async () => [],
+	connectionNodeEnabled: async () => false,
 };
 
 // Any method not listed above warns in DevTools instead of crashing.

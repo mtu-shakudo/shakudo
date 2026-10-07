@@ -6,12 +6,20 @@ import { HTML5Backend } from "react-dnd-html5-backend";
 import SidebarWrapper from "./components/SideBar/SidebarWrapper";
 import { NotificationsProvider } from "@mantine/notifications";
 import BodyWrapper from "./components/BodyWrapper";
+import { CustomDragLayer } from "./components/CustomDragLayer";
 
 export default function Crucible() {
     const [projectID, setProjectID] = useState<number>();
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
         (window as any).electronAPI.getOpenProject().then((id: number) => setProjectID(id));
+    }, []);
+
+    useEffect(() => {
+        const onMove = (e: MouseEvent) => setMousePos({ x: e.clientX, y: e.clientY });
+        window.addEventListener("mousemove", onMove);
+        return () => window.removeEventListener("mousemove", onMove);
     }, []);
 
     return (
@@ -42,6 +50,7 @@ export default function Crucible() {
                     </AppShell>
                 </NotificationsProvider>
             </MantineProvider>
+            <CustomDragLayer mousePos={mousePos} />
         </DndProvider>
     );
 }

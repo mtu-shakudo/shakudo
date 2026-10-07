@@ -229,7 +229,7 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
           <div id={atom.id.toString() + 'receiver'} ref={drop} className={"connectionNode"} style={{backgroundColor: canDrop ? theme.colors.green[5] : theme.colors.gray[6]}}></div>
           <div>
             <Flex justify={'space-between'}>
-              <Text color={'white'} weight={400}>{atom.srcAtom.label.split('/').at(-1)}</Text>
+              <Text color={'white'} weight={400}>{atom.srcAtom.label.split('/').pop()}</Text>
             </Flex>
             {atom.srcAtom.fromRelations.map((rel) => {
               if (rel.arityCount > 2) {
