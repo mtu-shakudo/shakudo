@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "./electronAPIStub"; // replace with electronAPI.ts later
+import "./electronAPI"; // replace with electronAPI.ts later
 import Crucible from "./crucible";
 
 export function mountCrucible(el: HTMLElement) {

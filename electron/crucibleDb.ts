@@ -39,7 +39,9 @@ export async function initCrucibleDb(): Promise<void> {
 	});
 
 	crucibleProjectID = project.id;
-	console.log("[crucible] db:", dbPath, "| project id:", project.id);
+	console.log("[crucible] db:", dbPath, "| project id:", crucibleProjectID);
+
+	await seedCrucibleDb(crucibleProjectID);
 }
 
 export async function setAlloyFile(alloyFile: string): Promise<void> {
@@ -48,4 +50,32 @@ export async function setAlloyFile(alloyFile: string): Promise<void> {
 		where: { id: crucibleProjectID },
 		data: { alloyFile },
 	});
+}
+
+async function seedCrucibleDb(projectID: number): Promise<void> {
+	// Only seed an empty project
+	if ((await prisma.atomSource.count({ where: { projectID } })) > 0) return;
+
+	await prisma.atomSource.create({
+		data: { projectID, label: "this/Kitteh", color: "#4DABF7" },
+	});
+	await prisma.atomSource.create({
+		data: { projectID, label: "this/Imposter", color: "#69DB7C" },
+	});
+
+	await prisma.relation.create({
+		data: {
+			projectID, label: "InLoveWith", multiplicity: "set Kitteh",
+			type: "{this/Kitteh->this/Kitteh}",
+			fromLabel: "this/Kitteh", toLabel: "this/Kitteh", arityCount: 2,
+		},
+	});
+
+	const sociopath = await prisma.predicate.create({ data: { projectID, name: "sociopath" } });
+	await prisma.predicate.create({ data: { projectID, name: "allSociopaths" } });
+	await prisma.predParam.create({
+		data: { predID: sociopath.id, label: "k", paramType: "this/Kitteh" },
+	});
+
+	console.log("[crucible] seeded sample data");
 }

@@ -2,8 +2,9 @@ import {app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, MenuItemConstructor
 import * as path from "path";
 import * as isDev from "electron-is-dev";
 import * as fs from "fs";
-import {AlloyIntegration} from "./alloy/AlloyIntegration";
-import { initCrucibleDb, prisma, crucibleProjectID, crucibleAlloyPath } from "./crucibleDb";
+import { AlloyIntegration } from "./alloy/AlloyIntegration";
+import { initCrucibleDb, prisma, crucibleAlloyPath } from "./crucibleDb";
+import { registerCrucibleHandlers } from "./crucibleHandlers";
 
 /**
  * If move back to react, uncomment below for dev tools.
@@ -17,6 +18,9 @@ var prompt = require('electron-prompt');
  */
 let win: BrowserWindow | null = null;
 let file: string = "";
+
+/* Add Crucible IPC Handlers */
+registerCrucibleHandlers(() => win);
 
 /**
  * Called whenever a window needs to be created.
@@ -202,8 +206,6 @@ async function createWindow() {
 		return result;
 	});
 
-
-
 	/**
 	 * Either run the app or build the app.
 	 */
@@ -239,10 +241,6 @@ async function createWindow() {
 	// 	.catch((err) => console.log("An error occurred: ", err));
 
 }
-
-ipcMain.on("get-active-project", (event) => {
-	event.sender.send("get-active-project-resp", crucibleProjectID);
-});
 
 /**
  * Handle when electron is ready to create a window.
