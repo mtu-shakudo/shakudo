@@ -5,7 +5,7 @@ import * as fs from "fs";
 import { AlloyIntegration } from "./alloy/AlloyIntegration";
 import { initCrucibleDb, prisma, crucibleAlloyPath } from "./crucibleDb";
 import { registerCrucibleHandlers } from "./crucibleHandlers";
-
+import { startAlloyApi, stopAlloyApi, waitForAlloyApi } from "./crucibleAPI";
 /**
  * If move back to react, uncomment below for dev tools.
  */
@@ -247,6 +247,8 @@ async function createWindow() {
  */
 app.on("ready", async () => {
 	await initCrucibleDb();
+	await startAlloyApi();
+	waitForAlloyApi().then((up) => console.log("[asketch] api up:", up)); // don't block the window
 	await createWindow();
 });
 
@@ -269,6 +271,8 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+	console.log("[asketch] before-quit fired, stopping...");
+	stopAlloyApi();
 	prisma?.$disconnect();
 });
 

@@ -1,13 +1,95 @@
 import { ipcMain, BrowserWindow } from "electron";
 import * as path from "path";
 import * as fs from "fs";
-import { prisma, crucibleProjectID } from "./crucibleDb";
+import { prisma, crucibleProjectID, crucibleAlloyPath } from "./crucibleDb";
+import { postJson } from "./crucibleAPI";
 
+const short = (label: string) => label.split("/")[1] ?? label;
+const nick = (s: string) => s.replace(/ /g, "");
+
+async function buildTestCommand(projectID: number, testID: number) {
+	const test = await prisma.test.findFirst({
+		where: { id: testID },
+		include: {
+			atoms: { include: { srcAtom: true } },
+			connections: { include: { connLabel: true } },
+		},
+	});
+	const project = await prisma.project.findFirst({
+		where: { id: projectID },
+		include: { atoms: true, relations: true },
+	});
+	if (!test || !project) return null;
+	if (test.atoms.length === 0) return { error: "The test has no atoms." };
+
+	const atomTypes = Array.from(new Set(test.atoms.map((a) => a.srcAtom.label)));
+    const connTypes = Array.from(new Set(test.connections.map((c) => c.label)));
+
+	let cmd = "";
+	const counts: number[] = [];
+	for (const type of atomTypes) {
+		const atoms = test.atoms.filter((a) => a.srcAtom.label === type);
+		counts.push(atoms.length);
+		cmd += `some disj ${atoms.map((a) => nick(a.nickname)).join(", ")}: ${short(type)} {`;
+	}
+
+	// Each set equals exactly these atoms
+	const clauses: string[] = atomTypes.map((type) => {
+		const atoms = test.atoms.filter((a) => a.srcAtom.label === type);
+		return `${short(type)}=${atoms.map((a) => nick(a.nickname)).join("+")}`;
+	});
+
+	// Each relation equals exactly these connections. Order 2 rows are the second
+	// half of an arity-3 pair and are already covered by the order 1 row.
+	for (const label of connTypes) {
+		const conns = test.connections.filter((c) => c.label === label && c.order !== 2);
+		const tuples = conns.map((c) =>
+			c.connLabel.arityCount > 2
+				? c.order === 1 ? `${nick(c.fromNick)}->${nick(c.toNick)}->${nick(c.finalNick ?? "")}` : null
+				: `${nick(c.fromNick)}->${nick(c.toNick)}`
+		).filter((t): t is string => t !== null);
+		clauses.push(tuples.length ? `${label}=${tuples.join("+")}` : `no ${label}`);
+	}
+
+	// Anything the test doesn't use must be empty
+	for (const a of project.atoms) {
+		if (!atomTypes.includes(a.label) && !a.isAbstract) clauses.push(`no ${short(a.label)}`);
+	}
+	for (const r of project.relations) {
+		if (!connTypes.includes(r.label)) clauses.push(`no ${r.label}`);
+	}
+
+	// Predicates the user set to valid or invalid
+	const preds = await prisma.predInstance.findMany({
+		where: { testID, NOT: { state: null } },
+		include: { params: true, predicate: { include: { params: true } } },
+	});
+	for (const p of preds) {
+		const args = p.params.map((pp) => {
+			const atom = test.atoms.find((a) => a.id === pp.atom);
+			return atom ? atom.nickname : null;
+		});
+		if (args.some((a) => a === null)) {
+			return { error: `Predicate "${p.predicate.name}" has an unselected parameter.` };
+		}
+		const call = p.predicate.params.length > 0 ? `${p.predicate.name}[${args.join(",")}]` : p.predicate.name;
+		clauses.push(p.state ? call : `not ${call}`);
+	}
+
+	cmd += clauses.join(" and ") + "}".repeat(atomTypes.length);
+
+	return {
+		cmd,
+		alloyFile: project.alloyFile,
+		scope: Math.max(...counts).toString(),
+		maxSeq: counts.reduce((a, b) => a + b, 0).toString(),
+	};
+}
+
+// Crucible Inter process communication handlers
 export function registerCrucibleHandlers(getWin: () => BrowserWindow | null) {
 	const send = (channel: string, ...args: any[]) =>
 		getWin()?.webContents.send(channel, ...args);
-
-	ipcMain.handle("crucible:get-open-project", async () => crucibleProjectID);
 
 	const canvasInclude = {
 		atoms: {
@@ -25,6 +107,9 @@ export function registerCrucibleHandlers(getWin: () => BrowserWindow | null) {
 		},
 		connections: { include: { to: true, from: true, connLabel: true } },
 	};
+
+    ipcMain.handle("crucible:get-open-project", async () => crucibleProjectID);
+
 
 	ipcMain.handle("crucible:read-test", async (_e, testID: number) =>
 		prisma.test.findFirst({ where: { id: testID }, include: canvasInclude })
@@ -243,4 +328,36 @@ export function registerCrucibleHandlers(getWin: () => BrowserWindow | null) {
 		});
 		return conns.some((c) => c.connLabel.type === relationDependsOn);
 	});
+
+    // Receives the editor's current .als text and writes it where the project points
+    ipcMain.handle("crucible:sync-als", async (_e, text: string) => {
+        fs.mkdirSync(path.dirname(crucibleAlloyPath()), { recursive: true });
+        fs.writeFileSync(crucibleAlloyPath(), text);
+    });
+
+    ipcMain.handle("crucible:run-test", async (_e, { projectID, testID }) => {
+        try {
+            const built = await buildTestCommand(projectID, testID);
+            if (!built || "error" in built) {
+                console.log("[crucible] run-test:", built ? built.error : "test not found");
+                return "Error";
+            }
+            console.log("[crucible] command:", built.cmd);
+
+            const resp = await postJson("/tests", {
+                path: built.alloyFile,
+                command: built.cmd,
+                scope: built.scope,
+                maxSeq: built.maxSeq,
+            });
+            if (resp.status >= 400) {
+                console.error("[crucible] API error:", resp.status, resp.text);
+                return "Error";
+            }
+            return resp.text.includes("Unsatisfiable") ? "Fail" : "Pass";
+        } catch (e) {
+            console.error("[crucible] run-test failed:", e);
+            return "Error";
+        }
+    });
 }

@@ -11,7 +11,21 @@ datasource db {
   url      = "file:./template.db"
 }
 
-// An aSketch Project Object
+/*
+   An Alloy Sketch (aSketch) Project Object
+
+   At some point we will need to update the schema to use a 'Shakudo Project'
+
+   This will need to be discussed in more detail how we want that to look. It will need some
+   notion of the following:
+
+          > Names are subject to change of course 
+
+      * isCompiled     --- boolean for if the current workspace is compiled/saved (may or may not need, throwing it in here just incase)
+      * editor         --- boolean: True if editor is open, false if crucible is open
+      * activeShakPred --- The currently selected Shakudo predicate for editing
+      * blocks         --- The Blockly blocks used in the workspace (for each shakudo predicate)
+*/
 model Project {
   id           Int               @id @default(autoincrement())
   name         String            @unique // Unique name for use in filepath

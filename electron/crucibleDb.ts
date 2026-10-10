@@ -3,6 +3,13 @@ import { PrismaClient } from "@prisma/client";
 import * as path from "path";
 import * as fs from "fs";
 
+/* 
+	THIS API CURRENTLY HARDCODED TO WORK WITH "kittehLab.als" FOUND IN THE "examples" FOLDER
+
+	Once the backend parses the .als file into Atoms, Predicates, etc., then we can remove the
+	hardcoded data in "seedCrucibleDb"
+*/
+
 const SESSION_PROJECT_NAME = "shakudo-session";
 
 export let prisma: PrismaClient;
@@ -65,17 +72,37 @@ async function seedCrucibleDb(projectID: number): Promise<void> {
 
 	await prisma.relation.create({
 		data: {
-			projectID, label: "InLoveWith", multiplicity: "set Kitteh",
+			projectID, label: "love", multiplicity: "set Kitteh",
 			type: "{this/Kitteh->this/Kitteh}",
 			fromLabel: "this/Kitteh", toLabel: "this/Kitteh", arityCount: 2,
 		},
 	});
 
-	const sociopath = await prisma.predicate.create({ data: { projectID, name: "sociopath" } });
-	await prisma.predicate.create({ data: { projectID, name: "allSociopaths" } });
-	await prisma.predParam.create({
-		data: { predID: sociopath.id, label: "k", paramType: "this/Kitteh" },
-	});
+	const preds: { name: string; params: string[] }[] = [
+		{ name: "inLoveWith", params: ["k1", "k2"] },
+		{ name: "selfLove", params: ["k"] },
+		{ name: "onlyLoverOf", params: ["k1", "k2"] },
+		{ name: "onlyBelovedOf", params: ["k1", "k2"] },
+		{ name: "loveStory", params: [] },
+		{ name: "rivals", params: [] },
+		{ name: "narcissists", params: [] },
+		{ name: "sociopath", params: [] },
+		{ name: "rockstars", params: [] },
+		{ name: "oneLove", params: [] },
+		{ name: "allSociopaths", params: [] },
+		{ name: "myBaby", params: [] },
+		{ name: "realMyBaby", params: [] },
+		{ name: "kittehLove", params: [] },
+	];
+
+	for (const p of preds) {
+		const pred = await prisma.predicate.create({ data: { projectID, name: p.name } });
+		for (const label of p.params) {
+			await prisma.predParam.create({
+				data: { predID: pred.id, label, paramType: "this/Kitteh" },
+			});
+		}
+	}
 
 	console.log("[crucible] seeded sample data");
 }

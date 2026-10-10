@@ -264,10 +264,7 @@ window.onload = () => {
 
 	});
 
-
-	/*   Save the editor's contents  */
-
-	var get_save_callback = () => {
+	var collect_alloy_text = (): string => {
 		editor.setCursor(editor.getCursor("from"));
 		clear_extra_marks();
 		let marks = editor.getAllMarks();
@@ -276,13 +273,22 @@ window.onload = () => {
 			let ffind = marks[i].find();
 			let ffrom = ffind["from"]["line"]; let fto = ffind["to"]["line"];
 			let iBlk = currentParse.locations[i].b;
-			iBlk.textLines = Array(fto+1-ffrom).fill().map((_,i) => editorValue[ffrom + i]);
+			iBlk.textLines = Array(fto+1-ffrom).fill(0).map((_,k) => editorValue[ffrom + k]);
 			iBlk.dirty = true;
 		}
 		currentParse.updateTextLines();
-		ipcRenderer.invoke("get-save",  currentParse.fullLines.join("\n")   ).catch(console.error);
+		return currentParse.dispLines.join("\n");
+	};
+
+	/*   Save the editor's contents  */
+	var get_save_callback = () => {
+		collect_alloy_text();
+		ipcRenderer.invoke("get-save", currentParse.fullLines.join("\n")).catch(console.error);
 	};
 	ipcRenderer.on("get-save", get_save_callback);
+
+	// Lets the Crucible code ask for the current .als text
+	(window as any).collectAlloyText = collect_alloy_text;
 
 
 
@@ -496,6 +502,10 @@ window.onload = () => {
 		let marks = editor.getAllMarks();
 		let place = marks[source_index].find();
 		editor.replaceRange(tab_block.dispLines.join("\n"), place.from, place.to);
+		// push the compiled alloy file to Crucible
+		ipcRenderer
+			.invoke("crucible:sync-als", collect_alloy_text())
+			.catch(console.error);
 	});
 
 	const crucible_div = document.getElementById("crucible");

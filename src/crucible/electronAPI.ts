@@ -1,10 +1,10 @@
 const { ipcRenderer } = window.require("electron");
 
-// Methods ported to the real main process. Everything else falls back to the stub.
+// API calls IPC handlers
 const api: Record<string, any> = {
-	getOpenProject: () => ipcRenderer.invoke("crucible:get-open-project"),
-	getAtomSources: (projectID: number) =>
-		ipcRenderer.invoke("crucible:get-atom-sources", projectID),
+  getOpenProject: () => ipcRenderer.invoke("crucible:get-open-project"),
+  getAtomSources: (projectID: number) =>
+    ipcRenderer.invoke("crucible:get-atom-sources", projectID),
   getTests: (projectID: number) => ipcRenderer.invoke("crucible:get-tests", projectID),
   createNewTest: (args: { projectID: number; testName: string }) =>
     ipcRenderer.invoke("crucible:create-test", args),
@@ -37,6 +37,13 @@ const api: Record<string, any> = {
   createHighConnection: (args: any) => ipcRenderer.invoke("crucible:create-high-connection", args),
   deleteConnection: (id: number) => ipcRenderer.invoke("crucible:delete-connection", id),
   connectionNodeEnabled: (args: any) => ipcRenderer.invoke("crucible:connection-enabled", args),
+  runTest: async (args: { projectID: number; testID: number }) => {
+    const text = (window as any).collectAlloyText?.();
+    if (typeof text === "string" && text.trim().length > 0) {
+      await ipcRenderer.invoke("crucible:sync-als", text);
+    }
+    return ipcRenderer.invoke("crucible:run-test", args);
+  },
 };
 
 (window as any).electronAPI = new Proxy(api, {
