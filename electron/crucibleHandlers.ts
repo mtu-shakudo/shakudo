@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from "electron";
 import * as path from "path";
 import * as fs from "fs";
-import { prisma, crucibleProjectID, crucibleAlloyPath } from "./crucibleDb";
+import { prisma, crucibleProjectID } from "./crucibleDb";
 import { postJson } from "./crucibleAPI";
 
 const short = (label: string) => label.split("/")[1] ?? label;
@@ -331,9 +331,11 @@ export function registerCrucibleHandlers(getWin: () => BrowserWindow | null) {
 
     // Receives the editor's current .als text and writes it where the project points
     ipcMain.handle("crucible:sync-als", async (_e, text: string) => {
-        fs.mkdirSync(path.dirname(crucibleAlloyPath()), { recursive: true });
-        fs.writeFileSync(crucibleAlloyPath(), text);
-    });
+		const project = await prisma.project.findFirst({ where: { id: crucibleProjectID } });
+		if (!project) return;
+		fs.mkdirSync(path.dirname(project.alloyFile), { recursive: true });
+		fs.writeFileSync(project.alloyFile, text);
+	});
 
     ipcMain.handle("crucible:run-test", async (_e, { projectID, testID }) => {
         try {
@@ -347,8 +349,8 @@ export function registerCrucibleHandlers(getWin: () => BrowserWindow | null) {
             const resp = await postJson("/tests", {
                 path: built.alloyFile,
                 command: built.cmd,
-                scope: built.scope,
-                maxSeq: built.maxSeq,
+                //scope: built.scope,
+                maximum: built.maxSeq,
             });
             if (resp.status >= 400) {
                 console.error("[crucible] API error:", resp.status, resp.text);

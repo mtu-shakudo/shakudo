@@ -3,6 +3,14 @@ const { ipcRenderer } = window.require("electron");
 // API calls IPC handlers
 const api: Record<string, any> = {
   getOpenProject: () => ipcRenderer.invoke("crucible:get-open-project"),
+  listenForProjectChange: (cb: Function) => {
+    ipcRenderer.on("crucible:project-changed", () => cb());
+  },
+  resetListeners: () => {
+    ["tabs", "canvas", "predicates"].forEach((n) =>
+      ipcRenderer.removeAllListeners(`crucible:${n}-update`)
+    );
+  },
   getAtomSources: (projectID: number) =>
     ipcRenderer.invoke("crucible:get-atom-sources", projectID),
   getTests: (projectID: number) => ipcRenderer.invoke("crucible:get-tests", projectID),

@@ -17,10 +17,8 @@ function AtomsSidebarTab({ projectID }: Props) {
     window.electronAPI
       .getAtomSources(projectID)
       .then((atoms: AtomSourceWithRelations[]) => {
-        if (atoms.length > 0) {
-          setAtoms(atoms);
-          setLoading(false);
-        }
+        setAtoms(atoms ?? []);
+        setLoading(false);
       });
   };
 

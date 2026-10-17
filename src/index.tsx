@@ -262,6 +262,7 @@ window.onload = () => {
 			editor.setCursor({line: _bls, ch:0});
 		}
 
+		ipcRenderer.invoke("crucible:sync-als", collect_alloy_text()).catch(console.error);
 	});
 
 	var collect_alloy_text = (): string => {
@@ -289,8 +290,6 @@ window.onload = () => {
 
 	// Lets the Crucible code ask for the current .als text
 	(window as any).collectAlloyText = collect_alloy_text;
-
-
 
 	/*   Compiling blocks -> alloy  */
 

@@ -11,33 +11,39 @@ datasource db {
   url      = "file:./template.db"
 }
 
-/*
-   An Alloy Sketch (aSketch) Project Object
-
-   At some point we will need to update the schema to use a 'Shakudo Project'
-
-   This will need to be discussed in more detail how we want that to look. It will need some
-   notion of the following:
-
-          > Names are subject to change of course 
-
-      * isCompiled     --- boolean for if the current workspace is compiled/saved (may or may not need, throwing it in here just incase)
-      * editor         --- boolean: True if editor is open, false if crucible is open
-      * activeShakPred --- The currently selected Shakudo predicate for editing
-      * blocks         --- The Blockly blocks used in the workspace (for each shakudo predicate)
-*/
+//  An Alloy Sketch (aSketch) Project Object
 model Project {
   id           Int               @id @default(autoincrement())
   name         String            @unique // Unique name for use in filepath
   projectPath  String            @unique // Folder path for storage of test files
-  alloyFile    String // Reference to location of alloy file for sending to Springboot API
+  alloyFile    String  // Reference to location of alloy file for sending to Springboot API
   activeTab    String? // Reference to currently active tab (by tab name)
-  tests        Test[] // Array of test objects created by user
+  tests        Test[]  // Array of test objects created by user
   predicates   Predicate[]       @relation("projectPreds") // Array of predicates defined in the alloy file
   atoms        AtomSource[]      @relation("projectAtoms") // Array of Atom defined in the alloy file
   inheritances AtomInheritance[] @relation("projectInheritance")
   connections  Connection[]      @relation("project-connections")
   relations    Relation[]        @relation("projectRelations")
+
+  // new
+  sourcePath    String?  // the .als the user originally picked
+  structureHash String?  // used to detect changes made in the source .als that were done outside of shakudo
+  editorOpen    Boolean   @default(true)
+  activeShakPred String?
+  lastOpened    DateTime  @default(now())
+  shakPredicates ShakPredicate[] 
+}
+
+// A Shakudo Predicate
+model ShakPredicate {
+  id           Int     @id @default(autoincrement())
+  projectID    Int
+  title        String
+  workspaceXml String
+  metaHash     String
+  project      Project @relation(fields: [projectID], references: [id], onDelete: Cascade)
+
+  @@unique([projectID, title])
 }
 
 // A Test Object

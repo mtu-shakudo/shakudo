@@ -3,9 +3,10 @@ import * as path from "path";
 import * as isDev from "electron-is-dev";
 import * as fs from "fs";
 import { AlloyIntegration } from "./alloy/AlloyIntegration";
-import { initCrucibleDb, prisma, crucibleAlloyPath } from "./crucibleDb";
+import { initCrucibleDb, prisma, crucibleProjectID } from "./crucibleDb";
 import { registerCrucibleHandlers } from "./crucibleHandlers";
 import { startAlloyApi, stopAlloyApi, waitForAlloyApi } from "./crucibleAPI";
+import { syncProjectStructure } from "./crucibleImport";
 /**
  * If move back to react, uncomment below for dev tools.
  */
@@ -78,6 +79,26 @@ async function createWindow() {
 						const data: Buffer | undefined = fs.readFileSync(filePath);
 						if (!data) return;
 						file = filePath;
+						try {
+							const result = await syncProjectStructure(crucibleProjectID, filePath, async () => {
+								const r = await dialog.showMessageBox(win!, {
+									type: "warning",
+									buttons: ["Replace", "Cancel"],
+									defaultId: 1,
+									message: "This file's structure changed.",
+									detail: "Atoms, relations or predicates differ. Existing Crucible tests will be deleted.",
+								});
+								return r.response === 0;
+							});
+							console.log("[crucible] structure sync:", result);
+						} catch (e) {
+							console.error("[crucible] import failed:", e);
+						}
+						await prisma.project.update({
+							where: { id: crucibleProjectID },
+							data: { sourcePath: filePath },
+						});
+						win.webContents.send("crucible:project-changed");
 						const str = data.toString("utf8");
 						win.webContents.send("set", str);
 						const parts: string[] = filePath.split("/");
@@ -274,8 +295,4 @@ app.on("before-quit", () => {
 	console.log("[asketch] before-quit fired, stopping...");
 	stopAlloyApi();
 	prisma?.$disconnect();
-});
-
-ipcMain.handle("crucible-sync", async (event, text: string) => {
-	fs.writeFileSync(crucibleAlloyPath(), text);
 });

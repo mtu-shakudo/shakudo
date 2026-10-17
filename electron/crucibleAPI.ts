@@ -66,6 +66,7 @@ export async function waitForAlloyApi(timeoutMs = 30000): Promise<boolean> {
 	return false;
 }
 
+// Send a POST to the Spring boot server
 export function postJson(pathname: string, body: unknown): Promise<{ status: number; text: string }> {
 	return new Promise((resolve, reject) => {
 		const data = JSON.stringify(body);

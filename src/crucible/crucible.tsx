@@ -11,9 +11,16 @@ import { CustomDragLayer } from "./components/CustomDragLayer";
 export default function Crucible() {
     const [projectID, setProjectID] = useState<number>();
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    const [epoch, setEpoch] = useState(0);
+
+    const refresh = () => (window as any).electronAPI.getOpenProject().then(setProjectID);
 
     useEffect(() => {
-        (window as any).electronAPI.getOpenProject().then((id: number) => setProjectID(id));
+        refresh();
+        (window as any).electronAPI.listenForProjectChange(() => {
+            (window as any).electronAPI.resetListeners();
+            refresh().then(() => setEpoch((e) => e + 1));
+        });
     }, []);
 
     useEffect(() => {
@@ -24,7 +31,9 @@ export default function Crucible() {
 
     return (
         <DndProvider backend={HTML5Backend}>
-            <MantineProvider>
+            <MantineProvider
+                key={epoch}
+            >
                 <NotificationsProvider>
                     <AppShell
                         fixed={false}
@@ -42,11 +51,11 @@ export default function Crucible() {
                                 width={{ base: 84 }}
                                 styles={(theme) => ({ backgroundColor: theme.white, height: "100%" })}
                             >
-                                {projectID ? <SidebarWrapper projectID={projectID} /> : <></>}
+                                {projectID && projectID > 0 ? <SidebarWrapper projectID={projectID} /> : <></>}
                             </Navbar>
                         }
                     >
-                        {projectID ? <BodyWrapper projectID={projectID} /> : <div>Loading</div>}
+                        {projectID && projectID > 0 ? <BodyWrapper projectID={projectID} /> : <div style={{ padding: 16 }}>No project open</div>}
                     </AppShell>
                 </NotificationsProvider>
             </MantineProvider>
