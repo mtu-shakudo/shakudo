@@ -447,6 +447,7 @@ window.onload = () => {
 	};
 
 	ipcRenderer.on("cmd-compile", () => {
+		if(selected_index === -1) return;
 		const tab_div = shak_tabs_div.children.item(selected_index);
 		const tab_wrk = listBlocklyWorkplaces[selected_index].workspace;
 		const source_index = parseInt(tab_div.dataset.block_index);
@@ -529,6 +530,7 @@ window.onload = () => {
 	/* Misc */
 
 	ipcRenderer.on("get-run", () => {
+		if(selected_index === -1) return;
 		// this should actually only be done on pane switch, but meh
 		const tab_div = shak_tabs_div.children.item(selected_index);
 		const tab_wrk = listBlocklyWorkplaces[selected_index].workspace;
