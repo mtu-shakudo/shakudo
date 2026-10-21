@@ -2,10 +2,9 @@ import {app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, MenuItemConstructor
 import * as path from "path";
 import * as isDev from "electron-is-dev";
 import * as fs from "fs";
-import { AlloyIntegration } from "./alloy/AlloyIntegration";
 import { initCrucibleDb, prisma, crucibleProjectID } from "./crucibleDb";
 import { registerCrucibleHandlers } from "./crucibleHandlers";
-import { startAlloyApi, stopAlloyApi, waitForAlloyApi } from "./crucibleAPI";
+import { startAlloyApi, stopAlloyApi, waitForAlloyApi, postJson } from "./crucibleAPI";
 import { syncProjectStructure } from "./crucibleImport";
 /**
  * If move back to react, uncomment below for dev tools.
@@ -189,11 +188,6 @@ async function createWindow() {
 	Menu.setApplicationMenu(menu);
 
 	/**
-	 * Create an integration manager. (this is a handler that owns a process to talk with Java stuff).
-	 */
-	let integration: AlloyIntegration | undefined;
-
-	/**
 	 * Handle when the render process asks to save.
 	 */
 	ipcMain.handle("get-save", async (event, arg: string) => {
@@ -210,8 +204,13 @@ async function createWindow() {
 		var filename = file + "__samp";	//todo mktemp
 		fs.writeFileSync(filename, arg);
 
-		if (integration) integration.stop();
-		integration = new AlloyIntegration(filename, win);
+		postJson("/shakudo", {
+			path: filename
+		}).catch((err) => {
+			console.error("shakudo backend error", err);
+		}).then(() => {
+
+		});
 	});
 
 
