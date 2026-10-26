@@ -2,7 +2,7 @@ import {app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, MenuItemConstructor
 import * as path from "path";
 import * as isDev from "electron-is-dev";
 import * as fs from "fs";
-import { initCrucibleDb, prisma, crucibleProjectID, setActiveProject } from "./crucibleDb";
+import { initCrucibleDb, prisma, setActiveProject, projectForFile } from "./crucibleDb";
 import { registerCrucibleHandlers } from "./crucibleHandlers";
 import { startAlloyApi, stopAlloyApi, waitForAlloyApi, postJson } from "./crucibleAPI";
 import { syncProjectStructure } from "./crucibleImport";
@@ -109,11 +109,7 @@ async function createWindow() {
 						const filePath: string = path[0];
 						if (!filePath) return;
 						if (!fs.existsSync(filePath)) return;
-						await prisma.project.update({
-							where: { id: crucibleProjectID },
-							data: { sourcePath: filePath },
-						});
-						await openProject(crucibleProjectID);
+						await openProject(await projectForFile(filePath));
 					}
 				},
 				{

@@ -91,6 +91,19 @@ export async function createProject(name: string, sourcePath: string): Promise<C
 	return { success: true, projectID: project.id };
 }
 
+// File > Open: reuse the project that already uses this .als, or make one named after the file
+export async function projectForFile(sourcePath: string): Promise<number> {
+	const existing = await prisma.project.findFirst({ where: { sourcePath } });
+	if (existing) return existing.id;
+
+	const base = path.basename(sourcePath, ".als").replace(/[^-\w^&'@{}[\],$=!#().%+~ ]/g, "-").trim() || "Untitled";
+	for (let n = 1; ; n++) {
+		const result = await createProject(n === 1 ? base : `${base} ${n}`, sourcePath);
+		if (result.success) return result.projectID;
+		if (result.field === "sourcePath") throw new Error(result.message);
+	}
+}
+
 // Deletes the project row and its folder. The user's original .als (sourcePath) is never touched.
 export async function deleteProject(id: number): Promise<void> {
 	const project = await prisma.project.findFirst({ where: { id } });
