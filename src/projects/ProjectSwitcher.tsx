@@ -14,14 +14,18 @@ function ProjectSwitcher() {
   const [newFile, setNewFile] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
 
-  const load = () =>
+  const load = (): Promise<number> =>
     Promise.all([api().listProjects(), api().getOpenProject()]).then(([list, id]) => {
       setProjects(list);
       setOpenID(id);
+      return id;
     });
 
   useEffect(() => {
-    load();
+    // Nothing is open at launch, so ask which project to open
+    load().then((id) => {
+      if (id < 0) setManageOpen(true);
+    });
     api().listenForProjectChange(load);
     api().listenForProjectsChange(load);
   }, []);

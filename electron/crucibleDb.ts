@@ -3,8 +3,6 @@ import { PrismaClient } from "@prisma/client";
 import * as path from "path";
 import * as fs from "fs";
 
-const SESSION_PROJECT_NAME = "shakudo-session"; // temporary, until when we add project selection functinality
-
 export let prisma: PrismaClient;
 // The active project's id. -1 means no project is open.
 export let crucibleProjectID = -1;
@@ -32,14 +30,7 @@ export async function initCrucibleDb(): Promise<void> {
 			crucible.als  -- this is the plain Alloy that is read by Crucible for running tests
 			tests/        -- test files for crucible
 	*/
-	// Temporary: auto-create and open one project. Remove when we add project selection functinality
-	const projectPath = path.join(userDir, "session");
-	const project = await prisma.project.upsert({
-		where: { name: SESSION_PROJECT_NAME },
-		create: { name: SESSION_PROJECT_NAME, projectPath, alloyFile: path.join(projectPath, "crucible.als") },
-		update: {},
-	});
-	await setActiveProject(project.id);
+	// No project is open at launch; the renderer asks which one to open
 }
 
 // Makes a project the active one. Every handler reads crucibleProjectID, so this is the only switch.
