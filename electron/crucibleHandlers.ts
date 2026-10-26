@@ -130,6 +130,26 @@ export function registerCrucibleHandlers(
 		send("crucible:projects-changed");
 	});
 
+	// Editor state of the open project: blocks per tab, the selected tab, and Work vs Test view
+	ipcMain.handle("crucible:save-workspace", async (_e, { title, xml, metaHash }) => {
+		if (crucibleProjectID < 0) return;
+		await prisma.shakPredicate.upsert({
+			where: { projectID_title: { projectID: crucibleProjectID, title } },
+			create: { projectID: crucibleProjectID, title, workspaceXml: xml, metaHash },
+			update: { workspaceXml: xml, metaHash },
+		});
+	});
+
+	ipcMain.handle("crucible:set-active-pred", async (_e, title: string) => {
+		if (crucibleProjectID < 0) return;
+		await prisma.project.update({ where: { id: crucibleProjectID }, data: { activeShakPred: title } });
+	});
+
+	ipcMain.handle("crucible:set-view", async (_e, editorOpen: boolean) => {
+		if (crucibleProjectID < 0) return;
+		await prisma.project.update({ where: { id: crucibleProjectID }, data: { editorOpen } });
+	});
+
 	// File picking has to happen on main to get the full path
 	ipcMain.handle("crucible:select-alloy-file", async () => {
 		const win = getWin();

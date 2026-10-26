@@ -76,7 +76,12 @@ function setupAlert() {
 
 var currentParse: BlocklyParse;
 var selected_index: number = -1;
-var listBlocklyWorkplaces: { div: HTMLElement, workspace: Blockly.WorkspaceSvg, block_index: number }[] = [];
+var listBlocklyWorkplaces: { div: HTMLElement, workspace: Blockly.WorkspaceSvg, block_index: number, title: string }[] = [];
+var dirty = false;	// editor has changes not yet saved to the .als
+
+const tabTitle = (b, j: number) => (b.title ? b.title : `Block ${j}`);
+// What a tab's toolbox offers; saved blocks are only restored into a tab whose toolbox still matches
+const toolboxHash = (b) => JSON.stringify([b.fixed_set_names, Object.entries(b.fixed_predicates), Object.entries(b.fixed_predicates_inline), b.allow_multiple]);
 
 window.onresize = () => {
 	if(selected_index !== -1) {
@@ -140,11 +145,39 @@ window.onload = () => {
 
 		setupToolboxWorkspace(currBlock, workspace);
 
+		const title = tabTitle(currBlock, workspace_index);
+		// keep this tab's blocks in the project; UI events (select, scroll, zoom) don't change them
+		workspace.addChangeListener((e) => {
+			if (e.isUiEvent) return;
+			const xml = Blockly.Xml.domToText(Blockly.Xml.workspaceToDom(workspace));
+			ipcRenderer.invoke("crucible:save-workspace", { title, xml, metaHash: toolboxHash(currBlock) }).catch(console.error);
+		});
+
 		listBlocklyWorkplaces.push({
 			div: wrk_div,
 			workspace: workspace,
-			block_index: block_index
+			block_index: block_index,
+			title: title
 		});
+	}
+
+	// Put saved blocks back into each tab whose toolbox hasn't changed since they were saved
+	function restoreWorkspaces(saved: { title: string, xml: string, metaHash: string }[]) {
+		for (const w of listBlocklyWorkplaces) {
+			const s = saved.find((x) => x.title === w.title && x.metaHash === toolboxHash(currentParse.locations[w.block_index].b));
+			if (!s) continue;
+			// Blockly can't measure blocks in a hidden div, so show it while loading
+			const wasHidden = w.div.hidden;
+			w.div.hidden = false;
+			Blockly.svgResize(w.workspace);
+			Blockly.Events.disable();
+			try {
+				Blockly.Xml.domToWorkspace(Blockly.Xml.textToDom(s.xml), w.workspace);
+			} finally {
+				Blockly.Events.enable();
+				w.div.hidden = wasHidden;
+			}
+		}
 	}
 
 	var _int_tab_onclick = function(tab_div) {
@@ -167,6 +200,7 @@ window.onload = () => {
 			old_wrk_div.hidden = true;
 			tab_wrk_div.hidden = false;
 			selected_index = new_index;
+			ipcRenderer.invoke("crucible:set-active-pred", listBlocklyWorkplaces[new_index].title).catch(console.error);
 
 			// this is a HORRIBLE hack and I'm not sure why it works or is needed,
 			//   but various permutations of resize, render, etc all failed.
@@ -216,9 +250,10 @@ window.onload = () => {
 		extra_mark_list = [];
 	}
 
-	ipcRenderer.on("set", (event: any, message: any) => {
+	ipcRenderer.on("set", (event: any, message: any, saved?: { activeTab: string | null, workspaces: { title: string, xml: string, metaHash: string }[] }) => {
 		currentParse = BlocklyParse.parse(message);
 		editor.setValue(currentParse.dispLines.join("\n"));
+		dirty = false;
 		error_popup_hide();
 		no_instance_popup_hide();
 		blocklyDiv_container.innerHTML = "";
@@ -240,7 +275,7 @@ window.onload = () => {
 			editor.markText({line: loc.s, ch: 0}, {line: loc.s + loc.l - 1, ch: editor.getLine(loc.s+loc.l-1).length}, options);
 
 			if(loc.b.represented) {
-				createTab(tabs_div, i, j, (loc.b.title ? loc.b.title : `Block ${j}`)  );
+				createTab(tabs_div, i, j, tabTitle(loc.b, j));
 				createWorkspace(i, j); // should be the jth entry; other could add an index map or something
 				++j;
 			}
@@ -261,6 +296,10 @@ window.onload = () => {
 			// todo: base on screen size, and maybe use pixels to put roughly to middle of scrn?
 			editor.scrollIntoView({line: Math.max(0, _bls - 20), ch:0});
 			editor.setCursor({line: _bls, ch:0});
+
+			restoreWorkspaces(saved?.workspaces ?? []);
+			const reopen = listBlocklyWorkplaces.findIndex((w) => w.title === saved?.activeTab);
+			if (reopen > 0) _int_tab_onclick(tabs_div.children.item(reopen));
 		}
 
 		ipcRenderer.invoke("crucible:sync-als", collect_alloy_text()).catch(console.error);
@@ -286,8 +325,20 @@ window.onload = () => {
 	var get_save_callback = () => {
 		collect_alloy_text();
 		ipcRenderer.invoke("get-save", currentParse.fullLines.join("\n")).catch(console.error);
+		dirty = false;
 	};
 	ipcRenderer.on("get-save", get_save_callback);
+
+	// Lets main ask about unsaved changes before switching projects
+	editor.on("change", (_cm, change) => {
+		if (change.origin !== "setValue") dirty = true;
+	});
+	(window as any).shakudoIsDirty = () => dirty;
+	(window as any).shakudoSaveText = (): string => {
+		collect_alloy_text();
+		dirty = false;
+		return currentParse.fullLines.join("\n");
+	};
 
 	// Lets the Crucible code ask for the current .als text
 	(window as any).collectAlloyText = collect_alloy_text;
@@ -520,12 +571,14 @@ window.onload = () => {
 	const open_crucible = () => {
 		(document.activeElement as HTMLElement | null)?.blur(); // stop typing into the hidden editor
 		crucible_div.classList.add("show");
+		ipcRenderer.invoke("crucible:set-view", false).catch(console.error);
 	}
 
 	const open_editor = () => {
 		crucible_div.classList.remove("show");
 		editor.refresh();
 		editor.focus();
+		ipcRenderer.invoke("crucible:set-view", true).catch(console.error);
 	};
 
     ipcRenderer.on("cmd-test", open_crucible);

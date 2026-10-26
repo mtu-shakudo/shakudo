@@ -18,12 +18,34 @@ var prompt = require('electron-prompt');
  */
 let win: BrowserWindow | null = null;
 let file: string = "";
+let quitting = false;	// set by before-quit, so the close prompt knows to finish quitting
+
+/**
+ * Before the editor is replaced: offer to save unsaved changes. false means the user cancelled.
+ */
+async function confirmUnsaved(): Promise<boolean> {
+	if (!win || !file) return true;
+	const dirty: boolean = await win.webContents.executeJavaScript("window.shakudoIsDirty?.() ?? false");
+	if (!dirty) return true;
+	const r = await dialog.showMessageBox(win, {
+		type: "warning",
+		buttons: ["Save", "Don't Save", "Cancel"],
+		defaultId: 0,
+		cancelId: 2,
+		message: `Save changes to ${path.basename(file)}?`,
+		detail: "Your changes will be lost if you don't save them.",
+	});
+	if (r.response === 2) return false;
+	if (r.response === 0) fs.writeFileSync(file, await win.webContents.executeJavaScript("window.shakudoSaveText()"));
+	return true;
+}
 
 /**
  * Make a project active and load its .als into the editor and Crucible.
  */
 async function openProject(id: number) {
 	if (!win) return;
+	if (!(await confirmUnsaved())) return;
 	await setActiveProject(id);
 	const project = await prisma.project.findFirst({ where: { id } });
 	if (!project?.sourcePath || !fs.existsSync(project.sourcePath)) {
@@ -47,8 +69,14 @@ async function openProject(id: number) {
 	} catch (e) {
 		console.error("[crucible] import failed:", e);
 	}
+	// Saved editor state for this project: blocks per tab and the selected tab
+	const workspaces = await prisma.shakPredicate.findMany({ where: { projectID: id } });
 	win.webContents.send("crucible:project-changed");
-	win.webContents.send("set", fs.readFileSync(filePath).toString("utf8"));
+	win.webContents.send("set", fs.readFileSync(filePath).toString("utf8"), {
+		activeTab: project.activeShakPred,
+		workspaces: workspaces.map((w) => ({ title: w.title, xml: w.workspaceXml, metaHash: w.metaHash })),
+	});
+	win.webContents.send(project.editorOpen ? "cmd-work" : "cmd-test");
 	const parts: string[] = filePath.split("/");
 	win.setTitle("Shakudo - " + parts[parts.length - 1]);
 }
@@ -246,6 +274,22 @@ async function createWindow() {
 	win.on("closed", () => win = null);
 
 	/**
+	 * Closing the window (or quitting) with unsaved edits: ask first. The close is cancelled
+	 * while the prompt is up, then redone once the user picks Save or Don't Save.
+	 */
+	let closeConfirmed = false;
+	win.on("close", (e) => {
+		if (closeConfirmed) return;
+		e.preventDefault();
+		confirmUnsaved().then((ok) => {
+			if (!ok) { quitting = false; return; }
+			closeConfirmed = true;
+			if (quitting) app.quit();
+			else win?.close();
+		});
+	});
+
+	/**
 	 * Enable hot reloading.
 	 */
 	if (isDev) {
@@ -298,8 +342,14 @@ app.on("activate", () => {
 	}
 });
 
+// The window's close handler may still cancel a quit, so only note it here
 app.on("before-quit", () => {
-	console.log("[asketch] before-quit fired, stopping...");
+	quitting = true;
+});
+
+// Runs once the quit can no longer be cancelled
+app.on("will-quit", () => {
+	console.log("[asketch] will-quit fired, stopping...");
 	stopAlloyApi();
 	prisma?.$disconnect();
 });
