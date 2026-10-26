@@ -12,6 +12,7 @@ import CodeMirror from "codemirror";
 import {BlocklyParse} from "./BlocklyParser";
 import Blockly from "blockly";
 import { mountCrucible } from "./crucible/mount";
+import { mountProjectSwitcher } from "./projects/mount";
 import {setupBlocks, setupToolboxContents, setupToolboxWorkspace, Alloy, op_internal_translate,
 					binding_blocks, set_op_blocks,  quant_list, un_op_list, bin_op_list, compare_op_list, set_bin_op_list} from "./alloy_generator"
 
@@ -512,6 +513,9 @@ window.onload = () => {
 	const crucible_root = document.getElementById("crucible-root")
 	if (!crucible_div || !crucible_root) throw new Error("Error: crucible div not found");
 	else mountCrucible(crucible_root);
+
+	const switcher_root = document.getElementById("project-switcher");
+	if (switcher_root) mountProjectSwitcher(switcher_root);
 
 	const open_crucible = () => {
 		(document.activeElement as HTMLElement | null)?.blur(); // stop typing into the hidden editor

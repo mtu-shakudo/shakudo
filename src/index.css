@@ -81,6 +81,21 @@ span.CodeMirror-selectedtext {
   flex-direction: column;
 }
 
+.App .tab_bar {
+  display: flex;
+  flex: none;
+  height: 62px;
+  background: #21252b;
+}
+.App .tab_bar #project-switcher {
+  display: flex;
+  flex: none;
+}
+.App .tab_bar .tabs {
+  flex: 1;
+  min-width: 0;
+}
+
 .App .tabs {
   display: flex;
   height: 62px;
