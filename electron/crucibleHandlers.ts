@@ -1,7 +1,7 @@
-import { ipcMain, BrowserWindow } from "electron";
+import { ipcMain, BrowserWindow, dialog } from "electron";
 import * as path from "path";
 import * as fs from "fs";
-import { prisma, crucibleProjectID } from "./crucibleDb";
+import { prisma, crucibleProjectID, createProject, deleteProject } from "./crucibleDb";
 import { postJson } from "./crucibleAPI";
 
 const short = (label: string) => label.split("/")[1] ?? label;
@@ -87,7 +87,10 @@ async function buildTestCommand(projectID: number, testID: number) {
 }
 
 // Crucible Inter process communication handlers
-export function registerCrucibleHandlers(getWin: () => BrowserWindow | null) {
+export function registerCrucibleHandlers(
+	getWin: () => BrowserWindow | null,
+	openProject: (id: number) => Promise<void>
+) {
 	const send = (channel: string, ...args: any[]) =>
 		getWin()?.webContents.send(channel, ...args);
 
@@ -109,6 +112,34 @@ export function registerCrucibleHandlers(getWin: () => BrowserWindow | null) {
 	};
 
     ipcMain.handle("crucible:get-open-project", async () => crucibleProjectID);
+
+	ipcMain.handle("crucible:list-projects", async () =>
+		prisma.project.findMany({ orderBy: { lastOpened: "desc" } })
+	);
+
+	ipcMain.handle("crucible:create-project", async (_e, { name, sourcePath }) => {
+		const result = await createProject(name, sourcePath);
+		if (result.success) send("crucible:projects-changed");
+		return result;
+	});
+
+	ipcMain.handle("crucible:open-project", async (_e, id: number) => openProject(id));
+
+	ipcMain.handle("crucible:delete-project", async (_e, id: number) => {
+		await deleteProject(id);
+		send("crucible:projects-changed");
+	});
+
+	// File picking has to happen on main to get the full path
+	ipcMain.handle("crucible:select-alloy-file", async () => {
+		const win = getWin();
+		if (!win) return null;
+		const result = await dialog.showOpenDialog(win, {
+			properties: ["openFile"],
+			filters: [{ name: "Alloy", extensions: ["als"] }],
+		});
+		return result.canceled ? null : result.filePaths[0];
+	});
 
 
 	ipcMain.handle("crucible:read-test", async (_e, testID: number) =>

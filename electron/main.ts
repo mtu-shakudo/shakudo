@@ -2,7 +2,7 @@ import {app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, MenuItemConstructor
 import * as path from "path";
 import * as isDev from "electron-is-dev";
 import * as fs from "fs";
-import { initCrucibleDb, prisma, crucibleProjectID } from "./crucibleDb";
+import { initCrucibleDb, prisma, crucibleProjectID, setActiveProject } from "./crucibleDb";
 import { registerCrucibleHandlers } from "./crucibleHandlers";
 import { startAlloyApi, stopAlloyApi, waitForAlloyApi, postJson } from "./crucibleAPI";
 import { syncProjectStructure } from "./crucibleImport";
@@ -19,8 +19,42 @@ var prompt = require('electron-prompt');
 let win: BrowserWindow | null = null;
 let file: string = "";
 
+/**
+ * Make a project active and load its .als into the editor and Crucible.
+ */
+async function openProject(id: number) {
+	if (!win) return;
+	await setActiveProject(id);
+	const project = await prisma.project.findFirst({ where: { id } });
+	if (!project?.sourcePath || !fs.existsSync(project.sourcePath)) {
+		console.error("[crucible] project has no readable .als:", project?.sourcePath);
+		return;
+	}
+	const filePath = project.sourcePath;
+	file = filePath;
+	try {
+		const result = await syncProjectStructure(id, filePath, async () => {
+			const r = await dialog.showMessageBox(win!, {
+				type: "warning",
+				buttons: ["Replace", "Cancel"],
+				defaultId: 1,
+				message: "This file's structure changed.",
+				detail: "Atoms, relations or predicates differ. Existing Crucible tests will be deleted.",
+			});
+			return r.response === 0;
+		});
+		console.log("[crucible] structure sync:", result);
+	} catch (e) {
+		console.error("[crucible] import failed:", e);
+	}
+	win.webContents.send("crucible:project-changed");
+	win.webContents.send("set", fs.readFileSync(filePath).toString("utf8"));
+	const parts: string[] = filePath.split("/");
+	win.setTitle("Shakudo - " + parts[parts.length - 1]);
+}
+
 /* Add Crucible IPC Handlers */
-registerCrucibleHandlers(() => win);
+registerCrucibleHandlers(() => win, openProject);
 
 /**
  * Called whenever a window needs to be created.
@@ -75,33 +109,11 @@ async function createWindow() {
 						const filePath: string = path[0];
 						if (!filePath) return;
 						if (!fs.existsSync(filePath)) return;
-						const data: Buffer | undefined = fs.readFileSync(filePath);
-						if (!data) return;
-						file = filePath;
-						try {
-							const result = await syncProjectStructure(crucibleProjectID, filePath, async () => {
-								const r = await dialog.showMessageBox(win!, {
-									type: "warning",
-									buttons: ["Replace", "Cancel"],
-									defaultId: 1,
-									message: "This file's structure changed.",
-									detail: "Atoms, relations or predicates differ. Existing Crucible tests will be deleted.",
-								});
-								return r.response === 0;
-							});
-							console.log("[crucible] structure sync:", result);
-						} catch (e) {
-							console.error("[crucible] import failed:", e);
-						}
 						await prisma.project.update({
 							where: { id: crucibleProjectID },
 							data: { sourcePath: filePath },
 						});
-						win.webContents.send("crucible:project-changed");
-						const str = data.toString("utf8");
-						win.webContents.send("set", str);
-						const parts: string[] = filePath.split("/");
-						win.setTitle("Shakudo - " + parts[parts.length - 1]);
+						await openProject(crucibleProjectID);
 					}
 				},
 				{

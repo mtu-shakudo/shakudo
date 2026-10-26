@@ -6,6 +6,15 @@ const api: Record<string, any> = {
   listenForProjectChange: (cb: Function) => {
     ipcRenderer.on("crucible:project-changed", () => cb());
   },
+  listProjects: () => ipcRenderer.invoke("crucible:list-projects"),
+  createProject: (args: { name: string; sourcePath: string }) =>
+    ipcRenderer.invoke("crucible:create-project", args),
+  openProject: (id: number) => ipcRenderer.invoke("crucible:open-project", id),
+  deleteProject: (id: number) => ipcRenderer.invoke("crucible:delete-project", id),
+  selectAlloyFile: () => ipcRenderer.invoke("crucible:select-alloy-file"),
+  listenForProjectsChange: (cb: Function) => {
+    ipcRenderer.on("crucible:projects-changed", () => cb());
+  },
   resetListeners: () => {
     ["tabs", "canvas", "predicates"].forEach((n) =>
       ipcRenderer.removeAllListeners(`crucible:${n}-update`)

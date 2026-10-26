@@ -22,6 +22,13 @@
 %                      AlloyIntegration.ts. Run now goes main.ts -> crucibleApi.ts ->
 %                      POST /shakudo.
 % =========================================================================================
+%   v1.2            >> DATE: 10/26/2026  -  AUTHOR: Kyler Hillstrom
+%                      --------------------------------------------------------------------
+%                   >> Added project IPC (crucible:list-projects, create-project,
+%                      open-project, delete-project, select-alloy-file) and the
+%                      projects-changed push. File > Open and crucible:open-project both
+%                      go through openProject() in main.ts.
+% =========================================================================================
 \documentclass{article}
 
 \usepackage[landscape,margin=0.6in]{geometry}
@@ -73,7 +80,7 @@ Fall 2026
 \node[file](ptypes) at (20,-1.2) {Prisma generated types};
 
 % ---------------- Main process layer ----------------
-\node[ts]  (main)   at (5,-9)    {main.ts\\{\scriptsize menu, window, Open/Save/Run}};
+\node[ts]  (main)   at (5,-9)    {main.ts\\{\scriptsize menu, window, Open/Save/Run,\\openProject()}};
 \node[ts]  (hand)   at (10,-9)   {crucibleHandlers.ts\\{\scriptsize \texttt{crucible:*} handlers}};
 \node[ts]  (cimp)   at (5,-12.5) {crucibleImport.ts\\{\scriptsize structure hash + import}};
 \node[ts]  (cdb)    at (10,-12.5){crucibleDb.ts\\{\scriptsize Prisma client, active project}};
@@ -114,15 +121,16 @@ Fall 2026
 \draw[ipc, <->] (index.south) -- node[lbl, pos=0.3] {IPC: \texttt{set}, \texttt{cmd-compile},\\\texttt{cmd-test}, \texttt{cmd-work},\\\texttt{get-save}, \texttt{get-run}} (main.north);
 % Crucible IPC, request and push
 \draw[ipc] ([xshift=-5pt]eapi.south) -- node[lbl, left, pos=0.5]
-  {invoke\\\texttt{crucible:*}} ([xshift=-5pt]hand.north);
+  {invoke\\\texttt{crucible:*}\\incl. projects:\\list / create /\\open / delete} ([xshift=-5pt]hand.north);
 \draw[ipc] ([xshift=5pt]hand.north) -- node[lbl, right, pos=0.5]
-  {push: tabs, canvas,\\predicates, project-changed} ([xshift=5pt]eapi.south);
+  {push: tabs, canvas,\\predicates, project-changed,\\projects-changed} ([xshift=5pt]eapi.south);
 
 % ---------------- Main process edges ----------------
-\draw[call] (main) -- node[lbl, pos=0.75, right] {syncProjectStructure\\on Open} (cimp);
-\draw[call] (main) -- node[lbl, pos=0.3, right] {initCrucibleDb,\\active project id} (cdb);
+\draw[call] (main) -- node[lbl, pos=0.75, right] {syncProjectStructure\\in openProject()} (cimp);
+\draw[call] (main) -- node[lbl, pos=0.3, right] {initCrucibleDb,\\setActiveProject} (cdb);
 \draw[call] (main) -- node[lbl, above] {register \\handlers} (hand);
-\draw[call] (hand) -- node[lbl, right] {Prisma queries} (cdb);
+\draw[call] ([yshift=-0.3cm]hand.west) -- node[lbl, below] {openProject()\\callback} ([yshift=-0.3cm]main.east);
+\draw[call] (hand) -- node[lbl, right] {Prisma queries,\\create / deleteProject} (cdb);
 \draw[call] (cimp) -- node[lbl, below] {write rows} (cdb);
 \draw[call] (cimp.south) -- ++(0,-1.1) -|
   node[lbl, pos=0.05, below] {POST /files} (capi.south);

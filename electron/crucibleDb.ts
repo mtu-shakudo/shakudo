@@ -60,3 +60,51 @@ export async function setActiveProject(id: number): Promise<void> {
 export function clearActiveProject(): void {
 	crucibleProjectID = -1;
 }
+
+// Every project gets its own folder under here, named after the project
+const projectsRoot = () => path.join(app.getPath("userData"), "crucible", "projects");
+
+// Same character set Crucible allows for test names, since the name becomes a folder name
+const validProjectName = /^[-\w^&'@{}[\],$=!#().%+~ ]+$/;
+
+export type CreateProjectResult =
+	| { success: true; projectID: number }
+	| { success: false; field: "name" | "sourcePath"; message: string };
+
+// Creates the project row and folder. Structure import happens on first open.
+export async function createProject(name: string, sourcePath: string): Promise<CreateProjectResult> {
+	name = name.trim();
+	if (!name) return { success: false, field: "name", message: "Name is required." };
+	if (!validProjectName.test(name)) return { success: false, field: "name", message: "Name has invalid characters." };
+	if (await prisma.project.findFirst({ where: { name } })) {
+		return { success: false, field: "name", message: "A project with that name already exists." };
+	}
+	if (!sourcePath.endsWith(".als") || !fs.existsSync(sourcePath)) {
+		return { success: false, field: "sourcePath", message: "Pick an existing .als file." };
+	}
+
+	const projectPath = path.join(projectsRoot(), name);
+	fs.mkdirSync(path.join(projectPath, "tests"), { recursive: true });
+	const project = await prisma.project.create({
+		data: { name, projectPath, sourcePath, alloyFile: path.join(projectPath, "crucible.als") },
+	});
+	return { success: true, projectID: project.id };
+}
+
+// Deletes the project row and its folder. The user's original .als (sourcePath) is never touched.
+export async function deleteProject(id: number): Promise<void> {
+	const project = await prisma.project.findFirst({ where: { id } });
+	if (!project) return;
+
+	await prisma.$transaction([
+		// Relation has no cascade to AtomSource, so it goes first (same as replaceStructure)
+		prisma.relation.deleteMany({ where: { projectID: id } }),
+		prisma.project.delete({ where: { id } }),
+	]);
+
+	// Only remove folders we created
+	if (path.dirname(project.projectPath) === projectsRoot()) {
+		fs.rmSync(project.projectPath, { recursive: true, force: true });
+	}
+	if (crucibleProjectID === id) clearActiveProject();
+}
