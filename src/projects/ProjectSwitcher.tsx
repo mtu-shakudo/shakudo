@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { Menu, Text, UnstyledButton } from "@mantine/core";
-import { IconCheck, IconChevronDown, IconFolder, IconPlus } from "@tabler/icons";
-import type { Project } from "@prisma/client";
+import { IconCheck, IconChevronDown, IconFolder, IconList, IconPlus } from "@tabler/icons";
 import NewProjectModal from "./NewProjectModal";
+import ManageProjectsModal from "./ManageProjectsModal";
+import { fileName, ProjectRow } from "./types";
 
 const api = () => (window as any).electronAPI;
-const fileName = (filePath: string | null) => (filePath ? filePath.split(/[\\/]/).pop() : "no file");
 
 // Open project name at the left of the Blockly tab bar, with a dropdown of recent projects
 function ProjectSwitcher() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [openID, setOpenID] = useState(-1);
   const [newFile, setNewFile] = useState<string | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
 
   const load = () =>
     Promise.all([api().listProjects(), api().getOpenProject()]).then(([list, id]) => {
@@ -88,8 +89,21 @@ function ProjectSwitcher() {
           <Menu.Item icon={<IconPlus size={14} />} onClick={startNew}>
             New project…
           </Menu.Item>
+          <Menu.Item icon={<IconList size={14} />} onClick={() => setManageOpen(true)}>
+            Manage projects…
+          </Menu.Item>
         </Menu.Dropdown>
       </Menu>
+      <ManageProjectsModal
+        opened={manageOpen}
+        projects={projects}
+        openID={openID}
+        onClose={() => setManageOpen(false)}
+        onNew={() => {
+          setManageOpen(false);
+          startNew();
+        }}
+      />
       <NewProjectModal
         sourcePath={newFile}
         takenNames={projects.map((p) => p.name)}

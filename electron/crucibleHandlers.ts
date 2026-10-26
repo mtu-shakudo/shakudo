@@ -114,7 +114,7 @@ export function registerCrucibleHandlers(
     ipcMain.handle("crucible:get-open-project", async () => crucibleProjectID);
 
 	ipcMain.handle("crucible:list-projects", async () =>
-		prisma.project.findMany({ orderBy: { lastOpened: "desc" } })
+		prisma.project.findMany({ orderBy: { lastOpened: "desc" }, include: { _count: { select: { tests: true } } } })
 	);
 
 	ipcMain.handle("crucible:create-project", async (_e, { name, sourcePath }) => {
