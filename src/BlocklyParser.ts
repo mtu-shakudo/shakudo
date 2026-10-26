@@ -43,6 +43,7 @@ export class ParseBlock {
   public fixed_predicates: string[] = [];
   public fixed_predicates_inline: boolean[] = []; // TODO do this better
 
+  public auto: boolean = false;   // marker added by autoRegions; never written back on save
   public run_edit_blk: string|null = null;
   public run_cmds: { string: string } = {};
 
@@ -127,7 +128,7 @@ export class ParseBlock {
         }
         console.log(this.dispLines);
       }
-      if(this.typeLine === "") this.fullLines.shift();
+      if(this.typeLine === "" || this.auto) this.fullLines.shift();
       this.dirty = false;
     }
   }
@@ -163,7 +164,11 @@ export class BlocklyParse {
 	 * @param value The source code.
 	 */
 	public static parse(value: string): BlocklyParse {
-    const lines: string[] = value.split("\n");
+    let lines: string[] = value.split("\n");
+
+    // Plain Alloy file (no @shakudo markers): give every pred/fun/fact body its own tab
+    const auto = lines.every(l => BlocklyParse.extractShakudoComment(l) === null) ? BlocklyParse.autoRegions(lines) : null;
+    if(auto) lines = auto.lines;
 
     let firstBlock = new ParseBlock(OParseBlockType.HEAD);
     let currBlock = undefined;
@@ -179,7 +184,8 @@ export class BlocklyParse {
     }
 
     let runners = [];
-		for (const line of lines) {
+		for (let idx = 0; idx < lines.length; idx++) {
+      const line = lines[idx];
       shak_line = BlocklyParse.extractShakudoComment(line);
       if(shak_line === null) {
         currBlock.textLines.push(line);
@@ -188,6 +194,11 @@ export class BlocklyParse {
       } else {
         currBlock.parse();
         let newBlock = new ParseBlock(line);
+        const autoTitle = auto?.added.get(idx);
+        if(autoTitle !== undefined) {
+          newBlock.auto = true;
+          newBlock.title = autoTitle;
+        }
         currBlock.next = newBlock;
         newBlock.prev = currBlock;
         currBlock = newBlock;
@@ -248,6 +259,74 @@ export class BlocklyParse {
     this.full_locations.shift();
   };
 
+
+  /**
+   * Wrap each multi-line pred/fun/fact/assert body in edit/text markers, titled by its name.
+   * Only bodies whose { ends its line and whose } starts its line, so a region never splits a line.
+   * Returns null when the file has no such body. `added` maps each inserted marker's line index
+   * to its tab title ("" for the closing text marker).
+   */
+  public static autoRegions(src: string[]): { lines: string[], added: Map<number, string> } | null {
+    const regions: { from: number, to: number, title: string }[] = [];
+    const seen: { [name: string]: number } = {};
+    let depth = 0, inBlockComment = false;
+    let decl: string | null = null, open = -1, openEndsLine = false;
+
+    src.forEach((raw, i) => {
+      // the line with comments removed, so braces in comments don't count
+      let code = "";
+      for(let c = 0; c < raw.length; c++) {
+        if(inBlockComment) { if(raw.startsWith("*/", c)) { inBlockComment = false; c++; } continue; }
+        if(raw.startsWith("/*", c)) { inBlockComment = true; c++; continue; }
+        if(raw.startsWith("--", c) || raw.startsWith("//", c)) break;
+        code += raw[c];
+      }
+
+      if(depth === 0 && decl === null) {
+        const m = code.match(/^\s*(?:private\s+)?(pred|fun|fact|assert)\b\s*([^\s[{(:]*)/);
+        if(m) {
+          const base = m[2] || m[1];
+          seen[base] = (seen[base] || 0) + 1;
+          decl = seen[base] > 1 ? `${base} ${seen[base]}` : base;
+        }
+      }
+
+      for(const ch of code) {
+        if(ch === "{") {
+          if(depth === 0 && decl !== null) { open = i; openEndsLine = code.trim().endsWith("{"); }
+          depth++;
+        } else if(ch === "}") {
+          depth = Math.max(0, depth - 1);
+          if(depth === 0 && decl !== null && open >= 0) {
+            if(openEndsLine && code.trim().startsWith("}") && i - open > 1) {
+              regions.push({ from: open + 1, to: i, title: decl });
+            }
+            decl = null;
+            open = -1;
+          }
+        }
+      }
+    });
+
+    if(regions.length === 0) return null;
+
+    const lines: string[] = [];
+    const added = new Map<number, string>();
+    let r = 0;
+    src.forEach((line, i) => {
+      if(r < regions.length && i === regions[r].from) {
+        added.set(lines.length, regions[r].title);
+        lines.push(`-- @shakudo-edit ${regions[r].title}`);
+      }
+      if(r < regions.length && i === regions[r].to) {
+        added.set(lines.length, "");
+        lines.push("-- @shakudo-text");
+        r++;
+      }
+      lines.push(line);
+    });
+    return { lines, added };
+  };
 
   /**
    * eg "   // @shakudo-edit" --> "edit"; text lines --> null

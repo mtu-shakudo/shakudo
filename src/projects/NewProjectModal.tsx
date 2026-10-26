@@ -28,6 +28,8 @@ function NewProjectModal({ sourcePath, takenNames, onClose }: Props) {
     for (let n = 2; takenNames.includes(suggestion); n++) suggestion = `${base} ${n}`;
     setName(suggestion);
     setError(null);
+    // only when a new file is picked;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourcePath]);
 
   const create = async (e: React.FormEvent) => {

@@ -26,7 +26,10 @@ function ProjectSwitcher() {
     load().then((id) => {
       if (id < 0) setManageOpen(true);
     });
-    api().listenForProjectChange(load);
+    api().listenForProjectChange(() => {
+      setManageOpen(false); // e.g. File > Open while the launch picker is showing
+      load();
+    });
     api().listenForProjectsChange(load);
   }, []);
 
