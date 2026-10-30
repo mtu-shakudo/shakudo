@@ -441,7 +441,8 @@ gen_pred_thing = (n, block_type) => {
 // see above mention: N<=2 is strongly preferred
 gen_inline_arg_pred_thing = (n, block_type) => {
   let thing = gen_pred_thing(n, block_type);
-  let temp = thing["args0"][1]; thing["args0"][1] = thing["args0"][0]; thing["args0"][0] = temp;
+  // put the first input before the name; with no inputs there's nothing to move
+  if(n > 0) { let temp = thing["args0"][1]; thing["args0"][1] = thing["args0"][0]; thing["args0"][0] = temp; }
   thing["inputsInline"] = true;
   return thing;
 };

@@ -128,7 +128,8 @@ export class ParseBlock {
         }
         console.log(this.dispLines);
       }
-      if(this.typeLine === "" || this.auto) this.fullLines.shift();
+      if(this.auto) this.fullLines = this.dispLines.slice();   // added markers and their define_* lines are never saved
+      else if(this.typeLine === "") this.fullLines.shift();
       this.dirty = false;
     }
   }
@@ -269,18 +270,12 @@ export class BlocklyParse {
   public static autoRegions(src: string[]): { lines: string[], added: Map<number, string> } | null {
     const regions: { from: number, to: number, title: string }[] = [];
     const seen: { [name: string]: number } = {};
-    let depth = 0, inBlockComment = false;
+    const comments = { inBlock: false };
+    let depth = 0;
     let decl: string | null = null, open = -1, openEndsLine = false;
 
     src.forEach((raw, i) => {
-      // the line with comments removed, so braces in comments don't count
-      let code = "";
-      for(let c = 0; c < raw.length; c++) {
-        if(inBlockComment) { if(raw.startsWith("*/", c)) { inBlockComment = false; c++; } continue; }
-        if(raw.startsWith("/*", c)) { inBlockComment = true; c++; continue; }
-        if(raw.startsWith("--", c) || raw.startsWith("//", c)) break;
-        code += raw[c];
-      }
+      const code = BlocklyParse.codeOnly(raw, comments);
 
       if(depth === 0 && decl === null) {
         const m = code.match(/^\s*(?:private\s+)?(pred|fun|fact|assert)\b\s*([^\s[{(:]*)/);
@@ -310,13 +305,21 @@ export class BlocklyParse {
 
     if(regions.length === 0) return null;
 
+    // every tab's toolbox gets the file's signatures and predicates, except the tab's own predicate
+    const { sigs, preds } = BlocklyParse.scanDeclarations(src);
+    const defines = (title: string) => [
+      ...(sigs.length ? [`-- @shakudo-define_sig ${sigs.join(" ")}`] : []),
+      ...preds.filter(p => p.name !== title).map(p =>
+        `-- @shakudo-${p.types.length <= 2 ? "define_pred_inline" : "define_pred"} ${[p.name, ...p.types].join(" ")}`),
+    ];
+
     const lines: string[] = [];
     const added = new Map<number, string>();
     let r = 0;
     src.forEach((line, i) => {
       if(r < regions.length && i === regions[r].from) {
         added.set(lines.length, regions[r].title);
-        lines.push(`-- @shakudo-edit ${regions[r].title}`);
+        lines.push(`-- @shakudo-edit ${regions[r].title}`, ...defines(regions[r].title));
       }
       if(r < regions.length && i === regions[r].to) {
         added.set(lines.length, "");
@@ -326,6 +329,62 @@ export class BlocklyParse {
       lines.push(line);
     });
     return { lines, added };
+  };
+
+  /**
+   * Top-level signature names and predicates (with one type per parameter) declared in the file.
+   * Predicates whose parameter types aren't plain signatures of this file (set Cafe, Cafe->Cafe, Int) are left out,
+   * since predicate blocks only take single signatures.
+   */
+  public static scanDeclarations(src: string[]): { sigs: string[], preds: { name: string, types: string[] }[] } {
+    const sigs: string[] = [];
+    const found: { name: string, params: string }[] = [];
+    const comments = { inBlock: false };
+    let depth = 0;
+
+    for(const raw of src) {
+      const code = BlocklyParse.codeOnly(raw, comments);
+      if(depth === 0) {
+        // sig A, B extends C {   /   abstract one sig A {
+        const sig = code.match(/^\s*(?:(?:abstract|one|lone|some|private|var)\s+)*sig\s+(.+?)(?:\s+(?:extends|in)\s+.*)?\s*(?:\{.*)?$/);
+        if(sig) sigs.push(...sig[1].split(",").map(s => s.trim()).filter(s => s));
+        // pred name[a, b: T, c: U]   /   pred name(a: T)   /   pred name
+        const pred = code.match(/^\s*(?:private\s+)?pred\s+([\w'.]+)\s*(?:[[(]([^\])]*)[\])])?/);
+        if(pred && !pred[1].includes(".")) found.push({ name: pred[1], params: pred[2] ?? "" });   // skip receiver preds (Kitteh.foo)
+      }
+      for(const ch of code) {
+        if(ch === "{") depth++;
+        else if(ch === "}") depth = Math.max(0, depth - 1);
+      }
+    }
+
+    const preds: { name: string, types: string[] }[] = [];
+    for(const { name, params } of found) {
+      // "a, b: T, c: U" -> [T, T, U]
+      const types: string[] = [];
+      let waiting = 0;
+      for(const part of params.split(",").map(p => p.trim()).filter(p => p)) {
+        const colon = part.indexOf(":");
+        if(colon < 0) { waiting++; continue; }
+        const type = part.substring(colon + 1).trim();
+        for(let k = 0; k <= waiting; k++) types.push(type);
+        waiting = 0;
+      }
+      if(types.every(t => sigs.includes(t))) preds.push({ name, types });
+    }
+    return { sigs, preds };
+  };
+
+  /** The line with comments removed, so braces and names in comments don't count. Tracks /* *\/ across lines. */
+  public static codeOnly(raw: string, comments: { inBlock: boolean }): string {
+    let code = "";
+    for(let c = 0; c < raw.length; c++) {
+      if(comments.inBlock) { if(raw.startsWith("*/", c)) { comments.inBlock = false; c++; } continue; }
+      if(raw.startsWith("/*", c)) { comments.inBlock = true; c++; continue; }
+      if(raw.startsWith("--", c) || raw.startsWith("//", c)) break;
+      code += raw[c];
+    }
+    return code;
   };
 
   /**
