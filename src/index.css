@@ -132,6 +132,15 @@ span.CodeMirror-selectedtext {
   border-left: 1px solid #3a404b;
 }
 
+/* the popped-out tests window: Crucible fills it */
+.App.tests-window .editor {
+  width: 100%;
+}
+.App.tests-window .divider,
+.App.tests-window .right {
+  display: none;
+}
+
 .App .tab_bar {
   display: flex;
   flex: none;

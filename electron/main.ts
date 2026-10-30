@@ -17,6 +17,7 @@ var prompt = require('electron-prompt');
  * Hold onto the main window and a file string.
  */
 let win: BrowserWindow | null = null;
+let testWin: BrowserWindow | null = null;	// Crucible popped out into its own window
 let file: string = "";
 let quitting = false;	// set by before-quit, so the close prompt knows to finish quitting
 
@@ -71,15 +72,53 @@ async function openProject(id: number) {
 	}
 	// Saved editor state for this project: blocks per tab and the selected tab
 	const workspaces = await prisma.shakPredicate.findMany({ where: { projectID: id } });
-	win.webContents.send("crucible:project-changed");
+	BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("crucible:project-changed"));
 	win.webContents.send("set", fs.readFileSync(filePath).toString("utf8"), {
 		activeTab: project.activeShakPred,
 		workspaces: workspaces.map((w) => ({ title: w.title, xml: w.workspaceXml, metaHash: w.metaHash })),
 	});
-	win.webContents.send(project.editorOpen ? "cmd-work" : "cmd-test");
-	const parts: string[] = filePath.split("/");
-	win.setTitle("Shakudo - " + parts[parts.length - 1]);
+	// with tests popped out, the main window keeps the code
+	win.webContents.send(project.editorOpen || testWin ? "cmd-work" : "cmd-test");
+	win.setTitle("Shakudo - " + path.basename(filePath));
+	testWin?.setTitle("Shakudo Tests - " + path.basename(filePath));
 }
+
+const pageUrl = () => (isDev ? "http://localhost:3000" : `file://${__dirname}/../index.html`);
+
+/**
+ * Show the tests: focus their window when popped out, otherwise switch the main window to them.
+ */
+function showTests() {
+	if (testWin) testWin.focus();
+	else win?.webContents.send("cmd-test");
+}
+
+/**
+ * Move Crucible into a window of its own, and the main window back to the code.
+ * Closing that window puts the tests back in the main one.
+ */
+async function popOutTests() {
+	if (testWin) return testWin.focus();
+	testWin = new BrowserWindow({
+		width: 1000,
+		height: 720,
+		minWidth: 640,
+		minHeight: 480,
+		webPreferences: {
+			nodeIntegration: true,
+			contextIsolation: false
+		}
+	});
+	testWin.on("closed", () => {
+		testWin = null;
+		if (win && !win.isDestroyed()) win.webContents.send("cmd-test");
+	});
+	win?.webContents.send("cmd-work");
+	await testWin.loadURL(pageUrl() + "#tests");
+	testWin.setTitle("Shakudo Tests" + (file ? " - " + path.basename(file) : ""));
+}
+
+ipcMain.handle("crucible:pop-out-tests", popOutTests);
 
 /* Add Crucible IPC Handlers */
 registerCrucibleHandlers(() => win, openProject);
@@ -171,9 +210,7 @@ async function createWindow() {
 				{
 					label: "Test",
 					accelerator: "CmdOrCtrl+Shift+T",
-					click: async () => {
-						win?.webContents.send("cmd-test");
-					}
+					click: showTests
 				}
 			]
 		},
@@ -265,13 +302,15 @@ async function createWindow() {
 	/**
 	 * Either run the app or build the app.
 	 */
-	if (isDev) await win.loadURL("http://localhost:3000");
-	else await win.loadURL(`file://${__dirname}/../index.html`);
+	await win.loadURL(pageUrl());
 
 	/**
-	 * Set our reference to the window to null when it is closed.
+	 * Set our reference to the window to null when it is closed, and take the tests window with it.
 	 */
-	win.on("closed", () => win = null);
+	win.on("closed", () => {
+		win = null;
+		testWin?.close();
+	});
 
 	/**
 	 * Closing the window (or quitting) with unsaved edits: ask first. The close is cancelled

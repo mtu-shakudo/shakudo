@@ -94,6 +94,15 @@ window.onresize = () => {
  * This is called when the window is loaded.
  */
 window.onload = () => {
+	// The popped-out tests window loads this same page: Crucible only, no editor or blocks
+	if (window.location.hash === "#tests") {
+		document.body.classList.add("tests-window");
+		document.getElementById("crucible")?.classList.add("show");
+		hideAlert();
+		mountCrucible(document.getElementById("crucible-root")!);
+		return;
+	}
+
 	const editor_div = document.getElementById("editor");
 	if (!editor_div) return;
 	const editor: CodeMirror.Editor = CodeMirror(editor_div, {

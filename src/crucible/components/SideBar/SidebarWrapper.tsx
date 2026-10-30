@@ -1,7 +1,9 @@
-import { Center, ActionIcon, Stack, Drawer, Box } from "@mantine/core";
+import { Center, ActionIcon, Stack, Drawer, Box, Tooltip } from "@mantine/core";
 import {
   IconAdjustmentsHorizontal,
+  IconArrowBackUp,
   IconAtom,
+  IconExternalLink,
   IconTestPipe,
 } from "@tabler/icons";
 import React, { useState } from "react";
@@ -77,6 +79,22 @@ function SidebarWrapper({ projectID }: Props) {
         })}
       >
         {items}
+        {/* Tests in their own window, or back into the main one (closing the window does the same) */}
+        <Center mt={"auto"} sx={() => ({ width: "100%" })}>
+          {window.electronAPI.isTestsWindow() ? (
+            <Tooltip label={"Put tests back"} position={"right"}>
+              <ActionIcon size={"xl"} radius={"lg"} color={"gray"} onClick={() => window.close()}>
+                <IconArrowBackUp size={26} />
+              </ActionIcon>
+            </Tooltip>
+          ) : (
+            <Tooltip label={"Open tests in a new window"} position={"right"}>
+              <ActionIcon size={"xl"} radius={"lg"} color={"gray"} onClick={() => window.electronAPI.popOutTests()}>
+                <IconExternalLink size={26} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Center>
       </Stack>
       <Drawer
         target="#crucible-portals"

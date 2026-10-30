@@ -91,8 +91,9 @@ export function registerCrucibleHandlers(
 	getWin: () => BrowserWindow | null,
 	openProject: (id: number) => Promise<void>
 ) {
+	// every window, so a popped-out tests window stays in step with the main one
 	const send = (channel: string, ...args: any[]) =>
-		getWin()?.webContents.send(channel, ...args);
+		BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(channel, ...args));
 
 	const canvasInclude = {
 		atoms: {
@@ -380,16 +381,20 @@ export function registerCrucibleHandlers(
 		return conns.some((c) => c.connLabel.type === relationDependsOn);
 	});
 
-    // Receives the editor's current .als text and writes it where the project points
-    ipcMain.handle("crucible:sync-als", async (_e, text: string) => {
+    // Writes the editor's current .als text where the project points
+    const syncAls = async (text: string) => {
 		const project = await prisma.project.findFirst({ where: { id: crucibleProjectID } });
 		if (!project) return;
 		fs.mkdirSync(path.dirname(project.alloyFile), { recursive: true });
 		fs.writeFileSync(project.alloyFile, text);
-	});
+	};
+    ipcMain.handle("crucible:sync-als", async (_e, text: string) => syncAls(text));
 
     ipcMain.handle("crucible:run-test", async (_e, { projectID, testID }) => {
         try {
+            // Test against what's in the editor now. Asked of the main window, since Run can come from the tests window.
+            const text = await getWin()?.webContents.executeJavaScript("window.collectAlloyText?.() ?? ''");
+            if (typeof text === "string" && text.trim().length > 0) await syncAls(text);
             const built = await buildTestCommand(projectID, testID);
             if (!built || "error" in built) {
                 console.log("[crucible] run-test:", built ? built.error : "test not found");

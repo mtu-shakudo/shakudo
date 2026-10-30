@@ -54,13 +54,9 @@ const api: Record<string, any> = {
   createHighConnection: (args: any) => ipcRenderer.invoke("crucible:create-high-connection", args),
   deleteConnection: (id: number) => ipcRenderer.invoke("crucible:delete-connection", id),
   connectionNodeEnabled: (args: any) => ipcRenderer.invoke("crucible:connection-enabled", args),
-  runTest: async (args: { projectID: number; testID: number }) => {
-    const text = (window as any).collectAlloyText?.();
-    if (typeof text === "string" && text.trim().length > 0) {
-      await ipcRenderer.invoke("crucible:sync-als", text);
-    }
-    return ipcRenderer.invoke("crucible:run-test", args);
-  },
+  runTest: (args: { projectID: number; testID: number }) => ipcRenderer.invoke("crucible:run-test", args),
+  isTestsWindow: () => window.location.hash === "#tests",
+  popOutTests: () => ipcRenderer.invoke("crucible:pop-out-tests"),
 };
 
 (window as any).electronAPI = new Proxy(api, {
