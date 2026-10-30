@@ -43,6 +43,7 @@ export class ParseBlock {
   public fixed_predicates: string[] = [];
   public fixed_predicates_inline: boolean[] = []; // TODO do this better
 
+  public hidden: string[] = [];   // toolbox groups/operators from @shakudo-hide
   public auto: boolean = false;   // marker added by autoRegions; never written back on save
   public run_edit_blk: string|null = null;
   public run_cmds: { string: string } = {};
@@ -94,6 +95,8 @@ export class ParseBlock {
         this.fixed_predicates_inline[ splitter[0] ] = (shak_line === "define_pred_inline");
       } else if(shak_line === "allow_multiple") {
         this.allow_multiple = true;
+      } else if(shak_line === "hide") {
+        this.hidden.push(...line.split("hide")[1].split(/\s+/).filter(w => w));
       } else if(shak_line === "repl_cmd") {
         // does this actually need to be limited to 'run panes', or could they be global/global-ish? editable?
         let splitter = line.split(shak_line + " ")[1].split(" ").map(l=>l.trim()).filter(e=>e.toString());
@@ -128,8 +131,7 @@ export class ParseBlock {
         }
         console.log(this.dispLines);
       }
-      if(this.auto) this.fullLines = this.dispLines.slice();   // added markers and their define_* lines are never saved
-      else if(this.typeLine === "") this.fullLines.shift();
+      if(this.typeLine === "" || this.auto) this.fullLines.shift();
       this.dirty = false;
     }
   }
@@ -150,6 +152,7 @@ export class BlocklyParse {
   public locations: {s: number, l: number, b: ParseBlock | null }[] = [];
   public dispBlocks: ParseBlock[] = [];
   public runners: ParseBlock[] = [];
+  public fileHidden: string[] = [];
 
   /**
    *  Generate a Parse object by calling the static parse() method
@@ -167,8 +170,14 @@ export class BlocklyParse {
 	public static parse(value: string): BlocklyParse {
     let lines: string[] = value.split("\n");
 
-    // Plain Alloy file (no @shakudo markers): give every pred/fun/fact body its own tab
-    const auto = lines.every(l => BlocklyParse.extractShakudoComment(l) === null) ? BlocklyParse.autoRegions(lines) : null;
+    // Plain Alloy file (no region markers): give every pred/fun/fact body its own tab,
+    // offering the file's own signatures and predicates
+    const plain = !lines.some(l => {
+      const c = BlocklyParse.extractShakudoComment(l);
+      return c !== null && c in BlocklyParse.shakudo_comments_blockers;
+    });
+    const auto = plain ? BlocklyParse.autoRegions(lines) : null;
+    const decls = auto ? BlocklyParse.scanDeclarations(lines) : null;
     if(auto) lines = auto.lines;
 
     let firstBlock = new ParseBlock(OParseBlockType.HEAD);
@@ -200,6 +209,14 @@ export class BlocklyParse {
           newBlock.auto = true;
           newBlock.title = autoTitle;
         }
+        if(autoTitle && decls) {
+          newBlock.fixed_set_names.push(...decls.sigs);
+          for(const p of decls.preds) {
+            if(p.name === autoTitle) continue;   // a predicate can't call itself
+            newBlock.fixed_predicates[p.name] = p.types;
+            newBlock.fixed_predicates_inline[p.name] = p.types.length <= 2;
+          }
+        }
         currBlock.next = newBlock;
         newBlock.prev = currBlock;
         currBlock = newBlock;
@@ -212,6 +229,10 @@ export class BlocklyParse {
 
 		let outputParse = new BlocklyParse(firstBlock);
     outputParse.runners = runners;
+    // @shakudo-hide outside a tab's region applies to every tab
+    for(let b: ParseBlock | null = firstBlock; b !== null; b = b.next) {
+      if(!b.represented) outputParse.fileHidden.push(...b.hidden);
+    }
     // creates the initial outputLines and locations;
     //   thereafter it's better to let CodeMirror handle those details,
     //   and update the blocks when necessary.
@@ -305,21 +326,13 @@ export class BlocklyParse {
 
     if(regions.length === 0) return null;
 
-    // every tab's toolbox gets the file's signatures and predicates, except the tab's own predicate
-    const { sigs, preds } = BlocklyParse.scanDeclarations(src);
-    const defines = (title: string) => [
-      ...(sigs.length ? [`-- @shakudo-define_sig ${sigs.join(" ")}`] : []),
-      ...preds.filter(p => p.name !== title).map(p =>
-        `-- @shakudo-${p.types.length <= 2 ? "define_pred_inline" : "define_pred"} ${[p.name, ...p.types].join(" ")}`),
-    ];
-
     const lines: string[] = [];
     const added = new Map<number, string>();
     let r = 0;
     src.forEach((line, i) => {
       if(r < regions.length && i === regions[r].from) {
         added.set(lines.length, regions[r].title);
-        lines.push(`-- @shakudo-edit ${regions[r].title}`, ...defines(regions[r].title));
+        lines.push(`-- @shakudo-edit ${regions[r].title}`);
       }
       if(r < regions.length && i === regions[r].to) {
         added.set(lines.length, "");
@@ -403,7 +416,7 @@ export class BlocklyParse {
     return null;
   };
 
-  static shakudo_comments = [ "edit", "text", "manual", "comment", "define_sig", "define_pred", "define_pred_inline", "allow_multiple", "run", "repl_cmd" ];
+  static shakudo_comments = [ "edit", "text", "manual", "comment", "define_sig", "define_pred", "define_pred_inline", "allow_multiple", "run", "repl_cmd", "hide" ];
   static shakudo_comments_blockers = {  // as in "starts a block"
     "edit": OParseBlockType.EDIT,
     "text": OParseBlockType.TEXT,

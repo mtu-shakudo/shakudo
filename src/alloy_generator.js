@@ -237,10 +237,25 @@ export function setupBlocks(): Blockly.Toolbox {
 
 // ---------------------------------------------------------
 
+// @shakudo-hide words: a group hides all of its operators, or name one operator by its toolbox name
+const opName = (op) => (Array.isArray(op) ? op[1] : op);   // ["+", "union"] -> "union"
+export const hide_groups = {
+  quantifiers: quant_list,
+  boolean: [...bin_op_list, ...un_op_list, ...compare_op_list],
+  set: set_bin_op_list,
+};
+
 /*
  * Defines the presence and appearance of the blocks in each toolbox
  */
-export function setupToolboxContents(block: ParseBlock) {
+export function setupToolboxContents(block: ParseBlock, hidden = []) {
+  const known = ["variables", ...Object.keys(hide_groups), ...Object.values(hide_groups).flat().map(opName)];
+  for(const word of hidden) {
+    if(!known.includes(word)) console.warn(`@shakudo-hide: unknown word "${word}"; use one of: ${known.join(" ")}`);
+  }
+  const isHidden = (op) =>
+    hidden.includes(opName(op)) || Object.entries(hide_groups).some(([group, ops]) => hidden.includes(group) && ops.includes(op));
+  const shown = (list) => list.filter(op => !isHidden(op));
 
   var toolbox = {
     "kind": "flyoutToolbox",
@@ -276,19 +291,21 @@ export function setupToolboxContents(block: ParseBlock) {
   }; }));
 
 
-  toolbox["contents"].push(...[ {"kind": "label", "text": "User Local Variables:", "web-class": "toolbox_style", } ]);
-  for(let var_type of creatable_var_types) {
-    toolbox["contents"] = toolbox["contents"].concat([
-      {
-        "kind": "button",
-        "text": "Create a local variable",
-        "callbackKey": "createVariableCallback_" + var_type
-      },
-      {
-        "kind": "block",
-        "type": "get_" + var_type,
-      }
-    ]);
+  if(!hidden.includes("variables")) {
+    toolbox["contents"].push(...[ {"kind": "label", "text": "User Local Variables:", "web-class": "toolbox_style", } ]);
+    for(let var_type of creatable_var_types) {
+      toolbox["contents"] = toolbox["contents"].concat([
+        {
+          "kind": "button",
+          "text": "Create a local variable",
+          "callbackKey": "createVariableCallback_" + var_type
+        },
+        {
+          "kind": "block",
+          "type": "get_" + var_type,
+        }
+      ]);
+    }
   }
 
   /*toolbox["contents"].push( ...[{
@@ -304,16 +321,16 @@ export function setupToolboxContents(block: ParseBlock) {
     toolbox["contents"] = toolbox["contents"].concat(list.map(generic_map_func));
   };
 
-  toolbox["contents"].push(...[ {"kind": "label", "text": "Quantified Expressions:", "web-class": "toolbox_style", } ]);
-  generic_concat(quant_list);
-
-  toolbox["contents"].push(...[ {"kind": "label", "text": "Boolean-Valued Operators", "web-class": "toolbox_style", } ]);
-  generic_concat(bin_op_list);
-  generic_concat(un_op_list);
-  generic_concat(compare_op_list);
-
-  toolbox["contents"].push(...[ {"kind": "label", "text": "Set-Valued Operators", "web-class": "toolbox_style", } ]);
-  generic_concat(set_bin_op_list);
+  // each section's label only when something in it is left after @shakudo-hide
+  const section = (label, list) => {
+    const ops = shown(list);
+    if(ops.length === 0) return;
+    toolbox["contents"].push({"kind": "label", "text": label, "web-class": "toolbox_style", });
+    generic_concat(ops);
+  };
+  section("Quantified Expressions:", quant_list);
+  section("Boolean-Valued Operators", [...bin_op_list, ...un_op_list, ...compare_op_list]);
+  section("Set-Valued Operators", set_bin_op_list);
 
   // misc... none as of this comment
   generic_concat(block_defs);

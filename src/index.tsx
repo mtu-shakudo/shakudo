@@ -81,7 +81,8 @@ var dirty = false;	// editor has changes not yet saved to the .als
 
 const tabTitle = (b, j: number) => (b.title ? b.title : `Block ${j}`);
 // What a tab's toolbox offers; saved blocks are only restored into a tab whose toolbox still matches
-const toolboxHash = (b) => JSON.stringify([b.fixed_set_names, Object.entries(b.fixed_predicates), Object.entries(b.fixed_predicates_inline), b.allow_multiple]);
+const toolboxHidden = (b) => [...currentParse.fileHidden, ...b.hidden];
+const toolboxHash = (b) => JSON.stringify([b.fixed_set_names, Object.entries(b.fixed_predicates), Object.entries(b.fixed_predicates_inline), b.allow_multiple, toolboxHidden(b)]);
 
 window.onresize = () => {
 	if(selected_index !== -1) {
@@ -129,7 +130,7 @@ window.onload = () => {
 		blocklyDiv_container.appendChild(wrk_div);
 
 		const currBlock = currentParse.locations[block_index].b;
-		const toolbox = setupToolboxContents(currBlock);
+		const toolbox = setupToolboxContents(currBlock, toolboxHidden(currBlock));
 		let workspace = Blockly.inject(wrk_div, {
 			toolbox: toolbox,
 			renderer: "custom_renderer",
