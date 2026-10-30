@@ -19,9 +19,12 @@ import { AtomContents } from "./Atom/AtomContents";
 
 interface Props {
   testID: number;
+  zoom: number;
 }
 
-function Canvas({ testID }: Props) {
+// The canvas is scaled with CSS zoom (react-xarrows still lines up under it; transform: scale doesn't).
+// Positions inside it stay in canvas units, but the pointer is in screen pixels, so drops divide by zoom.
+function Canvas({ testID, zoom }: Props) {
 
   const AtomHeight = 120
   const AtomWidth = 240
@@ -132,8 +135,8 @@ function Canvas({ testID }: Props) {
         const delta = monitor.getDifferenceFromInitialOffset();
         if (delta) {
           if (isAtomInstance(item.data)) {
-            const left = Math.round(item.data.left + delta.x);
-            const top = Math.round(item.data.top + delta.y);
+            const left = Math.round(item.data.left + delta.x / zoom);
+            const top = Math.round(item.data.top + delta.y / zoom);
             if (monitor.getItemType() === ATOM) {
               console.log("Existing atom dragged.");
               updateAtom(item.data.id, left, top);
@@ -147,8 +150,8 @@ function Canvas({ testID }: Props) {
                 console.log("Item ", item);
                 addNewAtom({
                   sourceAtomID: item.data.id,
-                  top: Math.round(clickCoords.y - rect.top),
-                  left: Math.round(clickCoords.x - rect.left),
+                  top: Math.round((clickCoords.y - rect.top) / zoom),
+                  left: Math.round((clickCoords.x - rect.left) / zoom),
                 });
               }
             }
@@ -168,6 +171,7 @@ function Canvas({ testID }: Props) {
           drop(node);
         }}
         className={"canvas"}
+        style={{ zoom }}
         // onContextMenu={(e) => {
         //   e.preventDefault();
         //   const clickCoords = { clickX: e.pageX, clickY: e.pageY };
@@ -246,7 +250,8 @@ function Canvas({ testID }: Props) {
           canvasRef.current = node;
           drop(node);
         }} 
-        className={"canvas"}>
+        className={"canvas"}
+        style={{ zoom }}>
       </div>
     );
   }
