@@ -84,6 +84,8 @@ span.CodeMirror-selectedtext {
 
 /* between the left pane (code or tests) and the blocks */
 .App .divider {
+  position: relative;
+  z-index: 5;
   flex: none;
   width: 6px;
   background: #21252b;
@@ -93,6 +95,41 @@ span.CodeMirror-selectedtext {
 .App .divider:hover,
 .App .divider.dragging {
   background: #61afef;
+}
+.App .divider .collapse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid #3a404b;
+  border-radius: 4px;
+  background: #2c313a;
+  color: #abb2bf;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.App .divider .collapse:hover {
+  background: #61afef;
+  border-color: #61afef;
+  color: #21252b;
+}
+
+/* blocks folded away: the left pane takes the whole window */
+.App .main.blocks-collapsed .editor {
+  flex: 1;
+  width: auto;
+}
+.App .main.blocks-collapsed .right {
+  display: none;
+}
+.App .main.blocks-collapsed .divider {
+  width: 22px;
+  cursor: pointer;
+  border-left: 1px solid #3a404b;
 }
 
 .App .tab_bar {

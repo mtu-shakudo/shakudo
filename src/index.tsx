@@ -182,6 +182,20 @@ window.onload = () => {
 		}
 	}
 
+	// this is a HORRIBLE hack and I'm not sure why it works or is needed,
+	//   but various permutations of resize, render, etc all failed.
+	// upon window size changes -- I'm not sure which but opening dev tools
+	//  seemed to trigger it semi-consistently -- then switching tabs,
+	//  the other workspace's blocks would all be invisible (though present in
+	//  the html). Shifting window size sometimes fixed it, leading to this:
+	// (also needed after the blocks were folded away: Blockly keeps the hidden size)
+	function forceResize(w: { div: HTMLElement, workspace: Blockly.WorkspaceSvg }) {
+		w.div.style.width = '99%';  w.div.style.height = '99%';
+		Blockly.svgResize(w.workspace);
+		w.div.style.width = '100%';  w.div.style.height = '100%';
+		Blockly.svgResize(w.workspace);
+	}
+
 	var _int_tab_onclick = function(tab_div) {
 		let old_div = shak_tabs_div.children.item(selected_index);
 		let new_index = parseInt(tab_div.dataset.workspace_index);
@@ -204,17 +218,7 @@ window.onload = () => {
 			selected_index = new_index;
 			ipcRenderer.invoke("crucible:set-active-pred", listBlocklyWorkplaces[new_index].title).catch(console.error);
 
-			// this is a HORRIBLE hack and I'm not sure why it works or is needed,
-			//   but various permutations of resize, render, etc all failed.
-			// upon window size changes -- I'm not sure which but opening dev tools
-			//  seemed to trigger it semi-consistently -- then switching tabs,
-			//  the other workspace's blocks would all be invisible (though present in
-			//  the html). Shifting window size sometimes fixed it, leading to this:
-			let temp_wrk = listBlocklyWorkplaces[new_index].workspace;
-			tab_wrk_div.style.width = '99%';  tab_wrk_div.style.height = '99%';
-			Blockly.svgResize(temp_wrk);
-			tab_wrk_div.style.width = '100%';  tab_wrk_div.style.height = '100%';
-			Blockly.svgResize(temp_wrk);
+			forceResize(listBlocklyWorkplaces[new_index]);
 		}
 
 		const _bli = listBlocklyWorkplaces[selected_index].block_index;
@@ -255,6 +259,7 @@ window.onload = () => {
 
 	ipcRenderer.on("set", (event: any, message: any, saved?: { activeTab: string | null, workspaces: { title: string, xml: string, metaHash: string }[] }) => {
 		currentParse = BlocklyParse.parse(message);
+		main_div.classList.remove("blocks-collapsed");	// build the workspaces visible; Blockly can't measure inside a hidden pane
 		editor.setValue(currentParse.dispLines.join("\n"));
 		dirty = false;
 		error_popup_hide();
@@ -305,6 +310,7 @@ window.onload = () => {
 			if (reopen > 0) _int_tab_onclick(tabs_div.children.item(reopen));
 		}
 
+		applyCollapsed();
 		ipcRenderer.invoke("crucible:sync-als", collect_alloy_text()).catch(console.error);
 	});
 
@@ -587,26 +593,62 @@ window.onload = () => {
 	const saveLeftWidths = () => {
 		try { localStorage.setItem("shakudo-left-widths", JSON.stringify(leftWidths)); } catch (e) {}
 	};
+	// The › button on the divider folds the blocks away, per view like the width
+	const collapseBtn = document.getElementById("collapse-blocks") as HTMLElement;
+	const blocksCollapsed = { work: false, test: false };
+	try { Object.assign(blocksCollapsed, JSON.parse(localStorage.getItem("shakudo-blocks-collapsed") || "{}")); } catch (e) {}
+	const applyCollapsed = () => {
+		const collapsed = blocksCollapsed[view];
+		const wasCollapsed = main_div.classList.contains("blocks-collapsed");
+		main_div.classList.toggle("blocks-collapsed", collapsed);
+		collapseBtn.textContent = collapsed ? "‹" : "›";
+		collapseBtn.title = collapsed ? "Show blocks" : "Hide blocks";
+		divider.title = collapsed ? "Show blocks" : "Drag to resize · double-click to reset";
+		if (wasCollapsed && !collapsed && selected_index !== -1) forceResize(listBlocklyWorkplaces[selected_index]);
+	};
+	const setCollapsed = (collapsed: boolean) => {
+		blocksCollapsed[view] = collapsed;
+		try { localStorage.setItem("shakudo-blocks-collapsed", JSON.stringify(blocksCollapsed)); } catch (e) {}
+		applyCollapsed();
+		setLeftWidth(leftWidths[view]);	// re-measure Blockly when it comes back
+	};
+
 	const showView = (v: "work" | "test") => {
 		view = v;
+		applyCollapsed();
 		setLeftWidth(leftWidths[v]);
 	};
 
+	// A press anywhere on the divider, button included: moving a few pixels drags (unfolding the blocks first
+	// if they're folded), releasing without moving is a click that folds/unfolds. Moves are tracked on the
+	// window so a fast drag isn't lost when the pointer leaves the thin divider.
+	let press: { x: number, onButton: boolean, moved: boolean } | null = null;
 	divider.addEventListener("pointerdown", (e) => {
-		divider.setPointerCapture(e.pointerId);	// keep the drag even over Blockly or the canvas
-		divider.classList.add("dragging");
+		press = { x: e.clientX, onButton: e.target === collapseBtn, moved: false };
+		e.preventDefault();	// no text selection while dragging
 	});
-	divider.addEventListener("pointermove", (e) => {
-		if (!divider.hasPointerCapture(e.pointerId)) return;
+	window.addEventListener("pointermove", (e) => {
+		if (!press) return;
+		if (!press.moved && Math.abs(e.clientX - press.x) < 4) return;
+		if (!press.moved) {
+			press.moved = true;
+			divider.classList.add("dragging");
+			if (blocksCollapsed[view]) setCollapsed(false);
+		}
 		const box = main_div.getBoundingClientRect();
 		leftWidths[view] = Math.round(Math.min(80, Math.max(20, ((e.clientX - box.left) / box.width) * 100)));
 		setLeftWidth(leftWidths[view]);
 	});
-	divider.addEventListener("pointerup", () => {
+	window.addEventListener("pointerup", () => {
+		if (!press) return;
+		const { moved, onButton } = press;
+		press = null;
 		divider.classList.remove("dragging");
-		saveLeftWidths();
+		if (moved) saveLeftWidths();
+		else if (onButton || blocksCollapsed[view]) setCollapsed(!blocksCollapsed[view]);
 	});
-	divider.addEventListener("dblclick", () => {
+	divider.addEventListener("dblclick", (e) => {
+		if (e.target === collapseBtn || blocksCollapsed[view]) return;	// double-clicking the button isn't a reset
 		leftWidths[view] = 40;
 		setLeftWidth(40);
 		saveLeftWidths();
