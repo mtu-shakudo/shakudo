@@ -72,13 +72,27 @@ span.CodeMirror-selectedtext {
   display: flex;
 }
 .App .right {
-  width: 60%;
+  flex: 1;
+  min-width: 0;
   height: 100%;
   border: none;
   outline: none;
   stroke-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* between the left pane (code or tests) and the blocks */
+.App .divider {
+  flex: none;
+  width: 6px;
+  background: #21252b;
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+.App .divider:hover,
+.App .divider.dragging {
+  background: #61afef;
 }
 
 .App .tab_bar {
@@ -128,7 +142,6 @@ span.CodeMirror-selectedtext {
   max-width: 220px;
   padding: 0 14px;
   border-top: 2px solid transparent;
-  border-radius: 6px 6px 0 0;
   color: #abb2bf;
   font-size: 13px;
   white-space: nowrap;
@@ -172,7 +185,8 @@ span.CodeMirror-selectedtext {
 
 
 .App .editor {
-  width: 40%;
+  flex: none;
+  width: var(--left-width, 40%);
   height: 100%;
   background: none;
   color: #abb2bf;

@@ -571,14 +571,58 @@ window.onload = () => {
 	const switcher_root = document.getElementById("project-switcher");
 	if (switcher_root) mountProjectSwitcher(switcher_root);
 
+	/*   Divider between the left pane (code or tests) and the blocks: drag to resize, double-click to reset.
+	     Work and Test view each remember their own width. */
+	const main_div = document.querySelector(".main") as HTMLElement;
+	const divider = document.getElementById("divider") as HTMLElement;
+	const leftWidths = { work: 40, test: 40 };
+	try { Object.assign(leftWidths, JSON.parse(localStorage.getItem("shakudo-left-widths") || "{}")); } catch (e) {}
+	let view: "work" | "test" = "work";
+
+	const setLeftWidth = (percent: number) => {
+		main_div.style.setProperty("--left-width", `${percent}%`);
+		window.dispatchEvent(new Event("resize"));	// Blockly and Crucible re-measure
+		editor.refresh();
+	};
+	const saveLeftWidths = () => {
+		try { localStorage.setItem("shakudo-left-widths", JSON.stringify(leftWidths)); } catch (e) {}
+	};
+	const showView = (v: "work" | "test") => {
+		view = v;
+		setLeftWidth(leftWidths[v]);
+	};
+
+	divider.addEventListener("pointerdown", (e) => {
+		divider.setPointerCapture(e.pointerId);	// keep the drag even over Blockly or the canvas
+		divider.classList.add("dragging");
+	});
+	divider.addEventListener("pointermove", (e) => {
+		if (!divider.hasPointerCapture(e.pointerId)) return;
+		const box = main_div.getBoundingClientRect();
+		leftWidths[view] = Math.round(Math.min(80, Math.max(20, ((e.clientX - box.left) / box.width) * 100)));
+		setLeftWidth(leftWidths[view]);
+	});
+	divider.addEventListener("pointerup", () => {
+		divider.classList.remove("dragging");
+		saveLeftWidths();
+	});
+	divider.addEventListener("dblclick", () => {
+		leftWidths[view] = 40;
+		setLeftWidth(40);
+		saveLeftWidths();
+	});
+	showView("work");
+
 	const open_crucible = () => {
 		(document.activeElement as HTMLElement | null)?.blur(); // stop typing into the hidden editor
 		crucible_div.classList.add("show");
+		showView("test");
 		ipcRenderer.invoke("crucible:set-view", false).catch(console.error);
 	}
 
 	const open_editor = () => {
 		crucible_div.classList.remove("show");
+		showView("work");
 		editor.refresh();
 		editor.focus();
 		ipcRenderer.invoke("crucible:set-view", true).catch(console.error);
