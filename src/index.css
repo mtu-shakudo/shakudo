@@ -84,7 +84,7 @@ span.CodeMirror-selectedtext {
 .App .tab_bar {
   display: flex;
   flex: none;
-  height: 62px;
+  height: 44px;
   background: #21252b;
 }
 .App .tab_bar #project-switcher {
@@ -96,34 +96,61 @@ span.CodeMirror-selectedtext {
   min-width: 0;
 }
 
+/* tabs sit on the bar's bottom edge; the active one takes the workspace colour so it joins the blocks below */
 .App .tabs {
   display: flex;
-  height: 62px;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100%;
   width: 100%;
+  padding: 0 6px;
   background: #21252b;
   justify-content: flex-start;
-  overflow-x: scroll;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.App .tabs::-webkit-scrollbar {
+  height: 8px;
+}
+.App .tabs::-webkit-scrollbar-thumb {
+  background: #4b5263;
+  border-radius: 4px;
+}
+.App .tabs::-webkit-scrollbar-thumb:hover {
+  background: #5c6370;
 }
 .App .tabs .tab {
+  flex: none;
   display: flex;
-  color: #abb2bf;
-  padding: 0 20px;
   align-items: center;
-  justify-content: center;
-  min-width: 100px;
+  height: 34px;
+  max-width: 220px;
+  padding: 0 14px;
+  border-top: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  color: #abb2bf;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.App .tabs .tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .App .tabs .tab:hover {
-  background: #4d5055;
-  color: #bcbdbf;
+  background: #2c313a;
+  color: #d7dae0;
 }
 .App .tabs .tab.active {
-  background: #61afef;
-  color: #21252b;
+  background: #282c34;
+  border-top-color: #61afef;
+  color: #ffffff;
 }
 
 .App #blocklyDiv_container {
   width: 100%;
-  height: calc(100% - 62px);
+  height: calc(100% - 44px);
 }
 .App #blocklyDiv_container .blocklyDiv {
   width: 100%;
@@ -132,6 +159,10 @@ span.CodeMirror-selectedtext {
 }
 .App .blocklyFlyoutBackground {
   border-radius: 0;
+}
+/* Blockly outlines its workspace; drop it so the active tab joins the blocks */
+.App .blocklyMainBackground {
+  stroke: none;
 }
 
 .App .toolbox_style > .blocklyFlyoutLabelText {

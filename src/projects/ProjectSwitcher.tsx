@@ -7,7 +7,7 @@ import { fileName, ProjectRow } from "./types";
 
 const api = () => (window as any).electronAPI;
 
-// Open project name at the left of the Blockly tab bar, with a dropdown of recent projects
+// Open project name at the right end of the Blockly tab bar, with a dropdown of recent projects
 function ProjectSwitcher() {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [openID, setOpenID] = useState(-1);
@@ -49,7 +49,7 @@ function ProjectSwitcher() {
 
   return (
     <>
-      <Menu position="bottom-start" width={300} withinPortal zIndex={1000}>
+      <Menu position="bottom-end" width={300} withinPortal zIndex={1000}>
         <Menu.Target>
           <UnstyledButton
             title={open?.sourcePath ?? undefined}
@@ -62,7 +62,7 @@ function ProjectSwitcher() {
               padding: "0 14px",
               color: "#abb2bf",
               background: "#2c313a",
-              borderRight: "1px solid #3a404b",
+              borderLeft: "1px solid #3a404b",
               "&:hover": { background: "#3a404b" },
             }}
           >

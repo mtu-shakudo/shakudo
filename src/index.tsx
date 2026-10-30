@@ -133,6 +133,7 @@ window.onload = () => {
 		const toolbox = setupToolboxContents(currBlock, toolboxHidden(currBlock));
 		let workspace = Blockly.inject(wrk_div, {
 			toolbox: toolbox,
+			toolboxPosition: "end",	// palette on the right, away from Crucible in Test view
 			renderer: "custom_renderer",
 			theme: {
 				componentStyles: {
@@ -232,6 +233,7 @@ window.onload = () => {
 		tab_div.className = "tab";
 		tab_div.dataset.block_index = block_index;
 		tab_div.dataset.workspace_index = workspace_index;	// this should just be n for the nth tab
+		tab_div.title = tab_title;	// full name when a long title is cut off
 		const tab_span = document.createElement("span");
 		tab_span.textContent = tab_title;
 		tab_div.appendChild(tab_span);
