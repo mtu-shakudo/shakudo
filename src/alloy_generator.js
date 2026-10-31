@@ -5,7 +5,7 @@ import {ParseBlock} from "./BlocklyParser"
 // block definitions -- defined at the bottom of this file
 var block_defs;
 var gen_pred_thing, gen_inline_arg_pred_thing;
-var fixed_var_def_func, create_var_def_func, quant_def_func, un_op_def_func, bin_op_def_func, compare_op_def_func, set_bin_op_def_func;
+var fixed_var_def_func, create_var_def_func, quant_def_func, pick_def_func, un_op_def_func, bin_op_def_func, compare_op_def_func, set_bin_op_def_func;
 
 // function implementations in setupBlocks
 export var quant_list  = ["all", "some", "one", "lone", "no"];
@@ -13,6 +13,8 @@ export var un_op_list  = ["not"];
 export var bin_op_list = ["and", "or", "implies", "iff"];
 export var compare_op_list = ["=", "!="];  // todo: human-friendly words (dict?)
 export var set_bin_op_list = [ "-", ["+", "union"], ["&", "intersect"] ]
+// operators of the same shape share one palette block with a dropdown: block type -> operators
+var pick_groups = { quant: quant_list, logic: bin_op_list, compare: compare_op_list, set_op: set_bin_op_list };
 
 // misc
 var op_internal_translate;
@@ -231,6 +233,14 @@ export function setupBlocks(): Blockly.Toolbox {
   }
   set_bin_op_list.forEach( set_bin_op_func ); // currently the same function
 
+  // The palette's one block per group, its operator picked from a dropdown (field OP).
+  // It writes the same code as that operator's own block; those stay defined so saved work still loads.
+  const pick_defs = { quant: quant_def_func, logic: bin_op_def_func, compare: compare_op_def_func, set_op: (t) => set_bin_op_def_func(t, t) };
+  Object.entries(pick_groups).forEach(([type, ops]) => {
+    Alloy[type] = (block) => Alloy[block.getFieldValue('OP')](block);
+    upd_block_defs.push(pick_def_func(type, ops, pick_defs[type]));
+  });
+
 	Blockly.defineBlocksWithJsonArray(upd_block_defs);
 };
 
@@ -248,14 +258,39 @@ export const hide_groups = {
 /*
  * Defines the presence and appearance of the blocks in each toolbox
  */
+const isHidden = (op, hidden) =>
+  hidden.includes(opName(op)) || Object.entries(hide_groups).some(([group, ops]) => hidden.includes(group) && ops.includes(op));
+
+// One palette block for a group of same-shaped operators, picked from a dropdown.
+// Its menu leaves out what @shakudo-hide hid on this tab (the workspace's shakudoHidden), but any
+// operator of the group is still a valid value, so a saved block holding a hidden one loads as it was.
+class FieldOpDropdown extends Blockly.FieldDropdown {
+  constructor(ops) {
+    super(function() {
+      const all = ops.map(op => { const [code, label] = op_internal_translate(op); return [label, code]; });
+      if(!this.menuOpening_) return all;
+      const ws = this.getSourceBlock().workspace;
+      const hidden = (ws.targetWorkspace ?? ws).shakudoHidden ?? [];
+      return all.filter((opt, i) => !isHidden(ops[i], hidden) || opt[1] === this.getValue());
+    });
+  }
+  static fromJson(options) { return new FieldOpDropdown(options.ops); }
+  // Blockly 7 builds the menu inside showEditor_; only then is the list cut down
+  showEditor_(e) {
+    this.menuOpening_ = true;
+    super.showEditor_(e);
+    this.menuOpening_ = false;
+    this.generatedOptions_ = null;
+  }
+}
+Blockly.fieldRegistry.register("field_op_dropdown", FieldOpDropdown);
+
 export function setupToolboxContents(block: ParseBlock, hidden = []) {
   const known = ["variables", ...Object.keys(hide_groups), ...Object.values(hide_groups).flat().map(opName)];
   for(const word of hidden) {
     if(!known.includes(word)) console.warn(`@shakudo-hide: unknown word "${word}"; use one of: ${known.join(" ")}`);
   }
-  const isHidden = (op) =>
-    hidden.includes(opName(op)) || Object.entries(hide_groups).some(([group, ops]) => hidden.includes(group) && ops.includes(op));
-  const shown = (list) => list.filter(op => !isHidden(op));
+  const shown = (list) => list.filter(op => !isHidden(op, hidden));
 
   var toolbox = {
     "kind": "flyoutToolbox",
@@ -321,16 +356,20 @@ export function setupToolboxContents(block: ParseBlock, hidden = []) {
     toolbox["contents"] = toolbox["contents"].concat(list.map(generic_map_func));
   };
 
-  // each section's label only when something in it is left after @shakudo-hide
-  const section = (label, list) => {
-    const ops = shown(list);
-    if(ops.length === 0) return;
-    toolbox["contents"].push({"kind": "label", "text": label, "web-class": "toolbox_style", });
-    generic_concat(ops);
+  // A section lists pick groups by block type (one dropdown block, starting on its first shown operator)
+  // and plain operator lists (a block each). Its label only shows when something is left after @shakudo-hide.
+  const section = (label, parts) => {
+    const blocks = parts.flatMap(part => {
+      const ops = shown(typeof(part) == 'string' ? pick_groups[part] : part);
+      if(typeof(part) != 'string') return ops.map(generic_map_func);
+      return ops.length ? [{"kind": "block", "type": part, "fields": {"OP": op_internal_translate(ops[0])[0]}}] : [];
+    });
+    if(blocks.length === 0) return;
+    toolbox["contents"].push({"kind": "label", "text": label, "web-class": "toolbox_style", }, ...blocks);
   };
-  section("Quantified Expressions:", quant_list);
-  section("Boolean-Valued Operators", [...bin_op_list, ...un_op_list, ...compare_op_list]);
-  section("Set-Valued Operators", set_bin_op_list);
+  section("Quantified Expressions:", ["quant"]);
+  section("Boolean-Valued Operators", ["logic", un_op_list, "compare"]);
+  section("Set-Valued Operators", ["set_op"]);
 
   // misc... none as of this comment
   generic_concat(block_defs);
@@ -524,6 +563,22 @@ quant_def_func = (text) => { return {
     "tooltip": "",
     "helpUrl": ""
   }; };
+
+// A group's dropdown block: an operator's definition with the operator word swapped for the OP field
+pick_def_func = (type, ops, def_func) => {
+  const def = def_func("@OP");
+  const args = [];
+  def["message0"] = def["message0"].split(" ").map(word => {
+    const n = word.match(/^%(\d+)$/);
+    if(word === "@OP") args.push({ "type": "field_op_dropdown", "name": "OP", "ops": ops });
+    else if(n) args.push(def["args0"][n[1] - 1]);
+    else return word;
+    return `%${args.length}`;
+  }).join(" ");
+  def["args0"] = args;
+  def["type"] = type;
+  return def;
+};
 
 un_op_def_func = (text) => { return {
   "type": text,

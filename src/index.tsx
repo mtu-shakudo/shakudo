@@ -153,6 +153,7 @@ window.onload = () => {
 			}
 		});
 		workspace.setResizesEnabled(false);
+		(workspace as any).shakudoHidden = toolboxHidden(currBlock);	// read by the operator dropdowns
 
 		setupToolboxWorkspace(currBlock, workspace);
 
@@ -425,6 +426,7 @@ window.onload = () => {
 		console.log(block.type);//*/
 		// check if names are bound in get_ blocks, add bound vars in quants
 		//let this_level = [];
+		const op = block.getField("OP") ? block.getFieldValue("OP") : block.type;	// a palette dropdown block acts as its operator
 
 		if(block.type.startsWith("get_")) {		// getter for user vars
 			let get_var_id = block.getFieldValue('VAR');
@@ -439,7 +441,7 @@ window.onload = () => {
 			let get_fix_var_sig = block.getFieldValue('VAR');
 			return [[ get_fix_var_sig ]]; //ugh
 		}
-		if(binding_blocks.includes(block.type)) {	// quantifiers, atm
+		if(binding_blocks.includes(op)) {	// quantifiers, atm
 			let bind_var = block.getFieldValue('NAME');
 			let bind_var_type = descend_tree(parseBlock,  block.getInputTargetBlock('condition'), bound_names);
 
@@ -481,26 +483,26 @@ window.onload = () => {
 			}
 			return;
 		}
-		if(compare_op_list.includes(block.type)) { // check types match for == or !=
+		if(compare_op_list.includes(op)) { // check types match for == or !=
 			let type1 = descend_tree(parseBlock, block.getInputTargetBlock("left_value"), bound_names);
 			let type2 = descend_tree(parseBlock, block.getInputTargetBlock("right_value"), bound_names);
 			//if(type1 != type2)   throw new descend_tree_bounds__wrongTypeException(block);
 			// this should be a warning, but isn't technically an error
 			return;
 		}
-		if(un_op_list.includes(block.type)) {
+		if(un_op_list.includes(op)) {
 			descend_tree(parseBlock, block.getInputTargetBlock("statement"), bound_names);
 			return;
 		}
-		if(bin_op_list.includes(block.type)) {
+		if(bin_op_list.includes(op)) {
 			descend_tree(parseBlock, block.getInputTargetBlock("left_statement"), bound_names);
 			descend_tree(parseBlock, block.getInputTargetBlock("right_statement"), bound_names);
 			return;
 		}
-		if(set_bin_op_list.map(l => (typeof(l) == 'string') ? l : l[0]).includes(block.type)) {
+		if(set_bin_op_list.map(l => (typeof(l) == 'string') ? l : l[0]).includes(op)) {
 			let type1 = descend_tree(parseBlock, block.getInputTargetBlock("left_value"), bound_names);
 			let type2 = descend_tree(parseBlock, block.getInputTargetBlock("right_value"), bound_names);
-			switch(block.type) {
+			switch(op) {
 				case "-": return type1;		// strictly speaking this is correct, but it'll break strict pred-type checking
 				case "+": return Array.from(new Set( [...type1, ...type2] ));
 				case "&":
