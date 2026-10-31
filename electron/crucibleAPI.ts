@@ -1,6 +1,7 @@
 import { spawn, ChildProcess, execSync } from "child_process";
 import * as http from "http";
 import * as path from "path";
+import * as fs from "fs";
 import { app, dialog } from "electron";
 
 export const API_PORT = 10121;
@@ -12,6 +13,12 @@ const jarPath = () => app.isPackaged
 	: path.join(app.getAppPath(), "java", "aSketch-API.jar");
 
 const isWin = process.platform === "win32";
+
+// the packaged app ships its own Java (scripts/make-jre.js); dev uses whatever java is on the PATH
+const javaPath = () => {
+	const bundled = path.join(process.resourcesPath, "jre", "bin", isWin ? "java.exe" : "java");
+	return app.isPackaged && fs.existsSync(bundled) ? bundled : "java";
+};
 
 // ping the backend
 function ping(): Promise<boolean> {
@@ -33,7 +40,7 @@ export async function startAlloyApi(): Promise<void> {
 		console.log("[asketch] already running on port", API_PORT, "- reusing it");
 		return;
 	}
-	proc = spawn("java", ["-jar", jarPath(), "--server.address=127.0.0.1"]);
+	proc = spawn(javaPath(), ["-jar", jarPath(), "--server.address=127.0.0.1"]);
 	proc.stdout?.on("data", (d) => console.log("[asketch]", d.toString().trim()));
 	proc.stderr?.on("data", (d) => console.error("[asketch]", d.toString().trim()));
 	proc.on("error", (err) => {

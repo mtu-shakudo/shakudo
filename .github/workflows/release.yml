@@ -1,0 +1,47 @@
+# Builds the downloadable app on each OS. Run it by hand from the Actions tab, or push a tag like v0.3.0
+# to also put the files on a GitHub Release.
+name: Build app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # lets the tag build attach files to the Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 16
+      # the backend jar needs Java 18+; make-jre.js builds the bundled runtime from this JDK
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: yarn install --frozen-lockfile --ignore-engines
+      - run: yarn electron:build
+        env:
+          CI: false # react-scripts would otherwise fail the build on lint warnings
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shakudo-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage

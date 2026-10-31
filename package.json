@@ -1,8 +1,9 @@
 {
-	"name": "my-app",
+	"name": "shakudo",
+	"productName": "Shakudo",
 	"version": "0.2.0",
-	"author": "Your Name",
-	"description": "React-TypeScript-Electron sample with Create React App and Electron Builder",
+	"author": "Shakudo team",
+	"description": "Alloy editor with blocks and Crucible tests",
 	"homepage": ".",
 	"main": "build/electron/main.js",
 	"private": true,
@@ -50,27 +51,79 @@
 		"build": "react-scripts build",
 		"test": "react-scripts test",
 		"postinstall": "electron-builder install-app-deps",
-		"electron:dev": "concurrently \"cross-env BROWSER=none yarn start\" \"wait-on http://localhost:3000 && tsc -p electron -w\" \"wait-on http://localhost:3000 && tsc -p electron && electron .\"",
-		"electron:build": "yarn build && npx prisma generate && tsc -p electron && xcopy /E /I /Y electron\\generated build\\electron\\generated && electron-builder",
+		"electron:dev": "concurrently \"cross-env BROWSER=none yarn start\" \"wait-on http://localhost:3000 && node scripts/dev-electron.js\"",
+		"electron:build": "yarn build && prisma generate && tsc -p electron && node scripts/make-jre.js && electron-builder --publish never",
 		"eject": "react-scripts eject"
 	},
-  "build": {
-    "extends": null,
-    "files": [
-      "build/**/*"
-    ],
-    "asarUnpack": [
-      "build/electron/generated/**/*"
-    ],
-	"extraResources": [
-		{ "from": "prisma/template.db", "to": "prisma/template.db" },
-		{ "from": "java", "to": "java" }
-	],
-    "directories": {
-      "buildResources": "assets",
-      "output": "release"
-    }
-  },
+	"build": {
+		"extends": null,
+		"appId": "edu.mtu.shakudo",
+		"npmRebuild": false,
+		"afterPack": "scripts/after-pack.js",
+		"files": [
+			"build/**/*",
+			"!node_modules/**/*",
+			{
+				"from": "node_modules/@prisma/client",
+				"to": "node_modules/@prisma/client"
+			},
+			{
+				"from": "node_modules/@prisma/engines-version",
+				"to": "node_modules/@prisma/engines-version"
+			},
+			{
+				"from": "node_modules/.prisma",
+				"to": "node_modules/.prisma"
+			},
+			{
+				"from": "node_modules/electron-is-dev",
+				"to": "node_modules/electron-is-dev"
+			},
+			{
+				"from": "node_modules/electron-prompt",
+				"to": "node_modules/electron-prompt"
+			}
+		],
+		"asarUnpack": [
+			"node_modules/.prisma/**/*"
+		],
+		"extraResources": [
+			{
+				"from": "prisma/template.db",
+				"to": "prisma/template.db"
+			},
+			{
+				"from": "java",
+				"to": "java"
+			},
+			{
+				"from": "jre",
+				"to": "jre"
+			}
+		],
+		"mac": {
+			"target": [
+				"dmg"
+			],
+			"category": "public.app-category.education",
+			"identity": null
+		},
+		"win": {
+			"target": [
+				"portable"
+			]
+		},
+		"linux": {
+			"target": [
+				"AppImage"
+			],
+			"category": "Education"
+		},
+		"directories": {
+			"buildResources": "assets",
+			"output": "release"
+		}
+	},
 	"eslintConfig": {
 		"extends": [
 			"react-app",
@@ -93,7 +146,7 @@
 		"concurrently": "^6.2.0",
 		"cross-env": "^7.0.3",
 		"electron": "^12.0.1",
-		"electron-builder": "^22.10.5",
+		"electron-builder": "^23.6.0",
 		"prisma": "4.12.0",
 		"wait-on": "^5.3.0"
 	},

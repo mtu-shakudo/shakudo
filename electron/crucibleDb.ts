@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { PrismaClient } from "./generated/client";
+import { PrismaClient } from "@prisma/client";
 import * as path from "path";
 import * as fs from "fs";
 

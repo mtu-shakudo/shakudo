@@ -126,6 +126,23 @@ async function popOutTests() {
 
 ipcMain.handle("crucible:pop-out-tests", popOutTests);
 
+/**
+ * Enable hot reloading. Once per process: createWindow runs again on macOS when the dock icon
+ * is clicked with no window open, and each extra watcher would start another copy of the app.
+ */
+if (isDev) {
+	require("electron-reload")(__dirname, {
+		electron: path.join(__dirname,
+			"..",
+			"..",
+			"node_modules",
+			".bin",
+			"electron" + (process.platform === "win32" ? ".cmd" : "")),
+		forceHardReset: true,
+		hardResetMethod: "exit"
+	});
+}
+
 /* Add Crucible IPC Handlers */
 registerCrucibleHandlers(() => win, openProject);
 
@@ -331,22 +348,6 @@ async function createWindow() {
 			else win?.close();
 		});
 	});
-
-	/**
-	 * Enable hot reloading.
-	 */
-	if (isDev) {
-		require("electron-reload")(__dirname, {
-			electron: path.join(__dirname,
-				"..",
-				"..",
-				"node_modules",
-				".bin",
-				"electron" + (process.platform === "win32" ? ".cmd" : "")),
-			forceHardReset: true,
-			hardResetMethod: "exit"
-		});
-	}
 
 	/**
 	 * If move back to react, uncomment this to add dev tools.
