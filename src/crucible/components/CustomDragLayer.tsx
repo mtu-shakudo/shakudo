@@ -35,13 +35,14 @@ function getItemStyles(
     };
   }
   if (item.renderType === ATOM) {
-    const left = Math.round(delta.x);
-    const top = Math.round(delta.y);
+    // Draw the atom at the canvas zoom. Inside a zoomed box, Chromium reports the atom's rect and takes
+    // the translate in canvas units, so the pointer's screen-pixel delta is divided by zoom.
+    const zoom = Number((document.querySelector(".canvas") as HTMLElement | null)?.style.zoom) || 1;
     const transform = `translate(
-            ${mousePos.x + (initialSourceOffset.x - initialOffset.x) + left}px, 
-            ${mousePos.y + (initialSourceOffset.y - initialOffset.y) + top}px
+            ${initialSourceOffset.x + Math.round(delta.x / zoom)}px,
+            ${initialSourceOffset.y + Math.round(delta.y / zoom)}px
         )`;
-    return { transform, WebkitTransform: transform };
+    return { zoom, transform, WebkitTransform: transform };
   }
 }
 
