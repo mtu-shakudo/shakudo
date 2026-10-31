@@ -1,13 +1,17 @@
 import { spawn, ChildProcess, execSync } from "child_process";
 import * as http from "http";
 import * as path from "path";
-import { app } from "electron";
+import { app, dialog } from "electron";
 
 export const API_PORT = 10121;
 let proc: ChildProcess | null = null;
 
 // swap with merged .jar file once done
-const jarPath = () => path.join(app.getAppPath(), "java", "aSketch-API.jar");
+const jarPath = () => app.isPackaged
+	? path.join(process.resourcesPath, "java", "aSketch-API.jar")
+	: path.join(app.getAppPath(), "java", "aSketch-API.jar");
+
+const isWin = process.platform === "win32";
 
 // ping the backend
 function ping(): Promise<boolean> {
@@ -29,12 +33,14 @@ export async function startAlloyApi(): Promise<void> {
 		console.log("[asketch] already running on port", API_PORT, "- reusing it");
 		return;
 	}
-	proc = spawn("java", ["-jar", jarPath()]);
+	proc = spawn("java", ["-jar", jarPath(), "--server.address=127.0.0.1"]);
 	proc.stdout?.on("data", (d) => console.log("[asketch]", d.toString().trim()));
 	proc.stderr?.on("data", (d) => console.error("[asketch]", d.toString().trim()));
-	proc.on("error", (err) =>
-		console.error("[asketch] failed to start. Is java on your PATH?", err.message)
-	);
+	proc.on("error", (err) => {
+		console.error("[asketch] failed to start:", err.message);
+		proc = null;
+		dialog.showErrorBox("Backend failed to start", "Java was not found or could not run the backend.");
+	});
 	proc.on("close", (code) => {
 		console.log("[asketch] exited with code", code);
 		proc = null;
@@ -46,12 +52,11 @@ export async function startAlloyApi(): Promise<void> {
 }
 
 export function stopAlloyApi(): void {
-    // kill listening process to free up port
-	console.log("[asketch] stopAlloyApi, proc is", proc ? "set" : "null");
-	if (proc?.pid) {
-		try {
-			execSync(`taskkill /PID ${proc.pid} /T /F`);
-		} catch { /* already exited */ }
+	if (!proc) return;
+	if (isWin && proc.pid) {
+		try { execSync(`taskkill /PID ${proc.pid} /T /F`); } catch { /* already exited */ }
+	} else {
+		proc.kill("SIGTERM");
 	}
 	proc = null;
 }

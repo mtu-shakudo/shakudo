@@ -2,6 +2,7 @@ import {app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, MenuItemConstructor
 import * as path from "path";
 import * as isDev from "electron-is-dev";
 import * as fs from "fs";
+import * as os from "os";
 import { initCrucibleDb, prisma, setActiveProject, projectForFile } from "./crucibleDb";
 import { registerCrucibleHandlers } from "./crucibleHandlers";
 import { startAlloyApi, stopAlloyApi, waitForAlloyApi, postJson } from "./crucibleAPI";
@@ -20,6 +21,11 @@ let win: BrowserWindow | null = null;
 let testWin: BrowserWindow | null = null;	// Crucible popped out into its own window
 let file: string = "";
 let quitting = false;	// set by before-quit, so the close prompt knows to finish quitting
+
+// NFS home directories break SQLite locking, so keep app data on local disk
+if (process.platform === "linux") {
+	app.setPath("userData", path.join("/var/tmp", `shakudo-${os.userInfo().username}`));
+}
 
 /**
  * Before the editor is replaced: offer to save unsaved changes. false means the user cancelled.
@@ -272,18 +278,16 @@ async function createWindow() {
 	 * Does NOT call save() automatically anymore.
 	 */
 	ipcMain.handle("get-run", async (event, arg: string) => {
-		if (!win) return;
-		//fs.writeFileSync(file, arg);
-		var filename = file + "__samp";	//todo mktemp
-		fs.writeFileSync(filename, arg);
-
-		postJson("/shakudo", {
-			path: filename
-		}).catch((err) => {
+		if (!win || !file) return;
+		try {
+			const dir = path.join(app.getPath("userData"), "run");
+			fs.mkdirSync(dir, { recursive: true });
+			const filename = path.join(dir, path.basename(file) + "__samp");
+			fs.writeFileSync(filename, arg);
+			await postJson("/shakudo", { path: filename });
+		} catch (err) {
 			console.error("shakudo backend error", err);
-		}).then(() => {
-
-		});
+		}
 	});
 
 

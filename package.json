@@ -51,18 +51,26 @@
 		"test": "react-scripts test",
 		"postinstall": "electron-builder install-app-deps",
 		"electron:dev": "concurrently \"cross-env BROWSER=none yarn start\" \"wait-on http://localhost:3000 && tsc -p electron -w\" \"wait-on http://localhost:3000 && tsc -p electron && electron .\"",
-		"electron:build": "yarn build && tsc -p electron && electron-builder",
+		"electron:build": "yarn build && npx prisma generate && tsc -p electron && xcopy /E /I /Y electron\\generated build\\electron\\generated && electron-builder",
 		"eject": "react-scripts eject"
 	},
-	"build": {
-		"extends": null,
-		"files": [
-			"build/**/*"
-		],
-		"directories": {
-			"buildResources": "assets"
-		}
-	},
+  "build": {
+    "extends": null,
+    "files": [
+      "build/**/*"
+    ],
+    "asarUnpack": [
+      "build/electron/generated/**/*"
+    ],
+	"extraResources": [
+		{ "from": "prisma/template.db", "to": "prisma/template.db" },
+		{ "from": "java", "to": "java" }
+	],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    }
+  },
 	"eslintConfig": {
 		"extends": [
 			"react-app",

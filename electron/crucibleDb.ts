@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "./generated/client";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -15,7 +15,10 @@ export async function initCrucibleDb(): Promise<void> {
 	const dbPath = path.join(userDir, "crucible.db");
 	if (!fs.existsSync(dbPath)) {
 		// if it does not exist yet, copy over a fresh db file
-		fs.copyFileSync(path.join(app.getAppPath(), "prisma", "template.db"), dbPath);
+		const templatePath = app.isPackaged
+			? path.join(process.resourcesPath, "prisma", "template.db")
+			: path.join(app.getAppPath(), "prisma", "template.db");
+		fs.copyFileSync(templatePath, dbPath);
 	}
 
 	prisma = new PrismaClient({
