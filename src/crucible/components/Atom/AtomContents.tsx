@@ -198,7 +198,11 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
   return atom ? (
     <Stack
       id={atom.id.toString()}
-      ref={drag}
+      // the whole atom takes connection drops, not only the grey circle; the circle still lights up green
+      ref={(node: HTMLDivElement | null) => {
+        drag(node);
+        drop(node);
+      }}
       role="DraggableBox"
       spacing={0}
       style={getAtomStyles(atom.srcAtom.color, contentsBeingDragged, theme, atom.left, atom.top)}
@@ -226,7 +230,7 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
       p={'sm'}
       >
         <Group>
-          <div id={atom.id.toString() + 'receiver'} ref={drop} className={"connectionNode"} style={{backgroundColor: canDrop ? theme.colors.green[5] : theme.colors.gray[6]}}></div>
+          <div id={atom.id.toString() + 'receiver'} className={"connectionNode"} style={{backgroundColor: canDrop ? theme.colors.green[5] : theme.colors.gray[6]}}></div>
           <div>
             <Flex justify={'space-between'}>
               <Text color={'white'} weight={400}>{atom.srcAtom.label.split('/').pop()}</Text>

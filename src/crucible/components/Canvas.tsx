@@ -228,10 +228,29 @@ function Canvas({ testID, zoom }: Props) {
           />
         ))}
         {canvasItems.connections.map((connection, index) => {
+          // An arrow to an atom further left leaves from the left edge of the box instead of the relation's dot on
+          // the right, so it doesn't cut back across its own atom. When two atoms share several connections, each
+          // later one lands a little higher or lower on the target so they fan out instead of drawing on top of each other.
+          const from = canvasItems.atoms.find((a) => a.id === connection.fromID);
+          const to = canvasItems.atoms.find((a) => a.id === connection.toID);
+          const backward = !!from && !!to && to.left < from.left;
+          const sharedBefore = canvasItems.connections
+            .slice(0, index)
+            .filter((c) => c.fromID === connection.fromID && c.toID === connection.toID).length;
+          const fanOffset = (sharedBefore % 2 ? 1 : -1) * Math.ceil(sharedBefore / 2) * 16;
           return <Xarrow
-            start={connection.fromID + connection.label}
+            key={connection.id}
+            start={backward ? connection.fromID.toString() : connection.fromID + connection.label}
             end={connection.toID.toString()}
-            labels={connection.connLabel.label}
+            startAnchor={backward ? "left" : "right"}
+            endAnchor={{ position: backward ? "right" : "left", offset: { y: fanOffset } }}
+            labels={{
+              middle: (
+                <span style={{ background: theme.colors.dark[7], color: "white", padding: "0 4px", borderRadius: 4, fontSize: 12 }}>
+                  {connection.connLabel.label}
+                </span>
+              ),
+            }}
             color={connection.connLabel.arityCount > 2 ? theme.colors.orange[5] : theme.colors.blue[5]}
           />
           // const start = {x: connection.from.left + AtomWidth, y: connection.from.top + AtomHeight / 2}
