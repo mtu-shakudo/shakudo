@@ -73,8 +73,10 @@ npx electron-builder
 **Shakudo**
 - Sam VanderArk: [email](mailto:sjvander@mtu.edu), [github](https://github.com/SamV-42/)
 - Elijah Cobb: [email](mailto:elijah@elijahcobb.com), [website](https://elijahcobb.com), [github](https://github.com/elijahjcobb)
+
 **Crucible**
 - Adam Emerson: [github](https://github.com/AdamGEmerson)
+
 **Shakudo-Crucible integration** (CS 4792, Fall 2026)
 - Kyler Hillstrom: [github](https://github.com/KylerHil)
 - Zack Latusek: [github](https://github.com/That1GuyWhoSucks)
