@@ -223,7 +223,11 @@ function TabContent({ test, projectID }: Props) {
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      if (e.code === "Space") space.current = true;
+      if (e.code === "Space") {
+        space.current = true;
+        // otherwise the scroll box pages down (or a focused toolbar button gets pressed)
+        if (canvasActive.current) e.preventDefault();
+      }
       if (canvasActive.current && keys.current(e)) {
         e.preventDefault();
         e.stopPropagation();
