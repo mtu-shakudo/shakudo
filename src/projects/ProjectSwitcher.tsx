@@ -22,9 +22,11 @@ function ProjectSwitcher() {
     });
 
   useEffect(() => {
-    // Nothing is open at launch, so ask which project to open
+    // Nothing is open at launch, so ask which project to open. A window reopened from the dock after
+    // being closed starts empty while a project is still open, so load that one back into it.
     load().then((id) => {
       if (id < 0) setManageOpen(true);
+      else if (!api().isTestsWindow()) api().openProject(id);
     });
     api().listenForProjectChange(() => {
       setManageOpen(false); // e.g. File > Open while the launch picker is showing
