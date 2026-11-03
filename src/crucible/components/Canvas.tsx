@@ -235,6 +235,58 @@ function Canvas({ testID, zoom, selected, setSelected }: Props) {
   const groupFor = (id: number) =>
     isSelected(id) && canvasItems ? canvasItems.atoms.filter((a) => a.id !== id && isSelected(a.id)) : [];
 
+  const [selectedConns, setSelectedConns] = useState<number[]>([]);
+
+  // Selecting atoms and selecting connections are exclusive, so Delete only ever means one thing.
+  useEffect(() => {
+    if (selected.length > 0) setSelectedConns([]);
+  }, [selected]);
+
+  // Forget ids that no longer exist after a reload (undo, delete elsewhere).
+  useEffect(() => {
+    if (!canvasItems) return;
+    setSelectedConns((cur) => {
+      const next = cur.filter((id) => canvasItems.connections.some((c) => c.id === id));
+      return next.length === cur.length ? cur : next;
+    });
+  }, [canvasItems]);
+
+  useEffect(() => {
+    if (selectedConns.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      // don't steal the key from the rename box or any other text field
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      window.electronAPI
+        .deleteConnections({ testID, connectionIDs: selectedConns })
+        .finally(() => setSelectedConns([]));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedConns, testID]);
+
+  // Pressing anywhere that isn't a connection clears the connection selection.
+  useEffect(() => {
+    if (selectedConns.length === 0) return;
+    const onDown = (e: MouseEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.("[data-conn-id]")) return;
+      setSelectedConns([]);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [selectedConns.length > 0]);
+
+  const selectConn = (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    setSelected([]); // clear atom selection
+    const multi = e.shiftKey || e.metaKey || e.ctrlKey;
+    setSelectedConns((cur) =>
+      multi ? (cur.includes(id) ? cur.filter((c) => c !== id) : [...cur, id]) : [id]
+    );
+  };
+
   if (canvasItems) {
     return (
       <div
@@ -244,6 +296,13 @@ function Canvas({ testID, zoom, selected, setSelected }: Props) {
         }}
         className={"canvas"}
         style={{ zoom }}
+        onClick={(e) => { if (e.target === e.currentTarget) setSelectedConns([]); }}
+        onMouseDown={(e) => {
+          const el = (e.target as HTMLElement).closest("[data-conn-id]");
+          if (!el) return;
+          selectConn(e, Number(el.getAttribute("data-conn-id")));
+        }}
+        onMouseDownCapture={(e) => console.log("mousedown target:", e.target)}
         // onContextMenu={(e) => {
         //   e.preventDefault();
         //   const clickCoords = { clickX: e.pageX, clickY: e.pageY };
@@ -336,21 +395,45 @@ function Canvas({ testID, zoom, selected, setSelected }: Props) {
             above: { start: "top", end: "bottom", offset: { x: fan, y: 0 } },
           } as const;
           const { start, end, offset } = ends[side];
+
+          // Selected on its own, or swept up with the atoms: both ends are in the atom selection.
+          const inAtomSelection = selected.includes(connection.fromID) && selected.includes(connection.toID);
+          const isSel = selectedConns.includes(connection.id) || inAtomSelection;
+          const pick = (e: React.MouseEvent) => {
+            selectConn(e, connection.id);
+          };
+
+          const highlight = theme.colors.yellow[4];
+          const glow = isSel
+            ? `drop-shadow(0 0 1px ${highlight}) drop-shadow(0 0 3px ${highlight})`
+            : undefined;
+
           return (
-            <Xarrow
-              key={connection.id}
-              start={side === "right" ? connection.fromID + connection.label : connection.fromID.toString()}
-              end={connection.toID.toString()}
-              startAnchor={{ position: start, offset: { x: fs.x, y: fs.y } }}
-              endAnchor={{ position: end, offset: { x: offset.x + ts.x, y: offset.y + ts.y } }}
-              labels={{
-                middle: (
-                    <span style={{ background: theme.colors.dark[7], color: "white", padding: "0 4px", borderRadius: 4, fontSize: 12 }}>
+            <div key={connection.id} data-conn-id={connection.id} style={{ display: "contents" }}>
+              <Xarrow
+                start={side === "right" ? connection.fromID + connection.label : connection.fromID.toString()}
+                end={connection.toID.toString()}
+                startAnchor={{ position: start, offset: { x: fs.x, y: fs.y } }}
+                endAnchor={{ position: end, offset: { x: offset.x + ts.x, y: offset.y + ts.y } }}
+                color={connection.connLabel.arityCount > 2 ? theme.colors.orange[5] : theme.colors.blue[5]}
+                strokeWidth={4}
+                arrowBodyProps={{ style: { cursor: "pointer", pointerEvents: "visibleStroke", filter: glow } }}
+                arrowHeadProps={{ style: { cursor: "pointer", pointerEvents: "all", filter: glow } }}
+                labels={{
+                  middle: (
+                    <span
+                      style={{
+                        background: theme.colors.dark[7], color: "white", padding: "0 4px", borderRadius: 4, fontSize: 12,
+                        pointerEvents: "auto", cursor: "pointer",
+                        outline: isSel ? `2px solid ${highlight}` : undefined,
+                      }}
+                    >
                       {connection.connLabel.label}
-                    </span> ),
-              }}
-            color={connection.connLabel.arityCount > 2 ? theme.colors.orange[5] : theme.colors.blue[5]}
-            />
+                    </span>
+                  ),
+                }}
+              />
+            </div>
           );
           // const start = {x: connection.from.left + AtomWidth, y: connection.from.top + AtomHeight / 2}
           // const end = {x: connection.to.left, y: (connection.to.top + AtomHeight / 2)}

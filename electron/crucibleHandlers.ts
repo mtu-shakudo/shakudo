@@ -582,6 +582,22 @@ export function registerCrucibleHandlers(
 		return { success: true, error: null };
 	});
 
+	// Delete specific connections. One undo step for all of them.
+	ipcMain.handle("crucible:delete-connections", async (_e, { testID, connectionIDs }: { testID: number; connectionIDs: number[] }) => {
+		if (connectionIDs.length === 0) return { success: true };
+		const rows = await prisma.connection.findMany({ where: { testID, id: { in: connectionIDs } } });
+		if (rows.length === 0) return { success: false, error: "Connection not found" };
+
+		// An arity-3 pair is one tuple stored as two rows, so deleting either half takes both.
+		const ids = new Set(rows.map((r) => r.id));
+		for (const r of rows) if (r.order !== null && r.dependID !== null) ids.add(r.dependID);
+
+		await record(testID);
+		await prisma.connection.deleteMany({ where: { testID, id: { in: Array.from(ids) } } });
+		send("crucible:canvas-update");
+		return { success: true };
+	});
+
 	ipcMain.handle("crucible:connection-enabled", async (_e, { atomID, relationDependsOn }) => {
 		const conns = await prisma.connection.findMany({
 			where: { fromID: atomID },

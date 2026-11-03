@@ -63,6 +63,8 @@ const api: Record<string, any> = {
   createDependentConnection: (args: any) => ipcRenderer.invoke("crucible:create-connection", args),
   createHighConnection: (args: any) => ipcRenderer.invoke("crucible:create-high-connection", args),
   deleteConnection: (id: number) => ipcRenderer.invoke("crucible:delete-connection", id),
+  deleteConnections: (args: { testID: number; connectionIDs: number[] }) =>
+    ipcRenderer.invoke("crucible:delete-connections", args),
   connectionNodeEnabled: (args: any) => ipcRenderer.invoke("crucible:connection-enabled", args),
   runTest: (args: { projectID: number; testID: number }) => ipcRenderer.invoke("crucible:run-test", args),
   isTestsWindow: () => window.location.hash === "#tests",
