@@ -71,7 +71,17 @@ export const CustomDragLayer = ({ mousePos }: any) => {
   const renderItem = () => {
     switch (item.renderType) {
       case ATOM:
-        return <AtomContents contentsBeingDragged={true} atom={item.data} atoms={[]} />;
+        // the rest of a dragged selection, placed where it sits relative to the atom under the pointer
+        return (
+          <>
+            <AtomContents contentsBeingDragged={true} atom={item.data} atoms={[]} />
+            {item.group?.map((a: any) => (
+              <div key={a.id} style={{ position: "absolute", left: a.left - item.data.left, top: a.top - item.data.top }}>
+                <AtomContents contentsBeingDragged={true} atom={a} atoms={[]} />
+              </div>
+            ))}
+          </>
+        );
 
       case ATOM_SOURCE:
         return <AtomSourceItem atomSource={item.data} />;

@@ -1,7 +1,7 @@
-import React, { CSSProperties, useEffect, useState } from "react";
+import React, { CSSProperties, useCallback, useEffect, useState } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { ActionIcon, Flex, Group, MantineTheme, Paper, Stack, Text, useMantineTheme } from "@mantine/core";
+import { ActionIcon, Flex, Group, MantineTheme, Paper, Stack, Text, TextInput, useMantineTheme } from "@mantine/core";
 import { AtomWithSource, AtomSourceWithRelations } from "../../types";
 import type { Relation } from "@prisma/client";
 import { showNotification } from "@mantine/notifications";
@@ -16,13 +16,19 @@ interface Props {
   atom: AtomWithSource;
   contentsBeingDragged: boolean;
   atoms: AtomWithSource[];
+  selected?: boolean;
+  hidden?: boolean;
+  onSelect?(how: "press" | "click" | "toggle"): void;
+  groupFor?(): AtomWithSource[];
 }
-export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
+export function AtomContents({ atom, contentsBeingDragged, atoms, selected, hidden, onSelect, groupFor }: Props) {
   const [acceptTypes, setAcceptTypes] = useState<string[]>([]);
   const [modalOpened, setModalOpened] = useState<boolean>(false);
   const [dependsModalOpened, setDependsModalOpened] = useState<boolean>(false);
   const [connDependency, setConnDependency] = useState(null);
   const [fromAtom, setFromAtom] = useState(null);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState("");
 
   const renderType = ATOM;
   const theme = useMantineTheme();
@@ -67,16 +73,19 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
   const [{ isDragging }, drag, preview] = useDrag(
     () => ({
       type: ATOM,
-      item: {
+      // read when the drag starts, so it carries the selection as it is then
+      item: () => ({
         renderType,
         data: atom,
         metaData: atom.srcAtom,
-      },
+        group: groupFor ? groupFor() : [],
+      }),
+      canDrag: !renaming,
       collect: (monitor) => ({
         isDragging: monitor.isDragging(),
       }),
     }),
-    [renderType, atom]
+    [renderType, atom, groupFor, renaming]
   );
 
   const [{ isOver, canDrop }, drop] = useDrop(
@@ -104,6 +113,35 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
     }),
     [atom, acceptTypes]
   );
+
+  // the whole atom takes connection drops, not only the grey circle; the circle still lights up green
+  const atomRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      drag(node);
+      drop(node);
+    },
+    [drag, drop]
+  );
+
+  function startRename() {
+    setDraft(atom.nickname);
+    setRenaming(true);
+  }
+
+  function finishRename(save: boolean) {
+    setRenaming(false);
+    if (!save || draft.trim() === atom.nickname) return;
+    window.electronAPI
+      .renameAtom({ atomID: atom.id, nickname: draft })
+      .then((resp: { success: boolean; error?: string }) => {
+        if (!resp.success) {
+          showNotification({ title: "Cannot rename atom", message: resp.error, color: "red", icon: <IconAlertTriangle /> });
+        }
+      });
+  }
+
+  // Presses on the dots, buttons and the name field belong to them, not to selecting
+  const ownPress = (e: React.MouseEvent) => !!(e.target as HTMLElement).closest(".connectionNode, button, input");
 
   async function addNewConnection({
     projectID,
@@ -136,11 +174,11 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
         toAtom,
         relation,
       })
-      .then((resp: { success: boolean }) => {
+      .then((resp: { success: boolean; error?: string }) => {
         if (!resp.success) {
           showNotification({
             title: "Cannot add connection",
-            message: `Adding that connection would exceed it's multiplicity.`,
+            message: resp.error ?? "Adding that connection would exceed its multiplicity.",
             color: "red",
             icon: <IconAlertTriangle />,
           });
@@ -182,9 +220,11 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
       position: "absolute",
       borderRadius: "4px",
       backgroundColor: theme.colors.gray[8],
-      opacity: isDragging ? 0 : 1,
+      opacity: isDragging || hidden ? 0 : 1,
       filter: canDrop ? 'brightness(105%)' : '',
-      boxShadow: canDrop ? 'rgba(80, 200, 120, .90) 0px 5px 16px' : '',
+      boxShadow: canDrop
+        ? 'rgba(80, 200, 120, .90) 0px 5px 16px'
+        : selected ? `0 0 0 3px ${theme.colors.blue[5]}` : '',
   };
 
     // If we are being dragged via the AtomContents module, leave the positioning to the drag layer.
@@ -198,10 +238,16 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
   return atom ? (
     <Stack
       id={atom.id.toString()}
-      // the whole atom takes connection drops, not only the grey circle; the circle still lights up green
-      ref={(node: HTMLDivElement | null) => {
-        drag(node);
-        drop(node);
+      data-atom-id={atom.id}
+      data-left={atom.left}
+      data-top={atom.top}
+      ref={atomRef}
+      onMouseDown={(e) => {
+        if (!onSelect || ownPress(e)) return;
+        onSelect(e.shiftKey || e.metaKey || e.ctrlKey ? "toggle" : "press");
+      }}
+      onClick={(e) => {
+        if (onSelect && !ownPress(e) && !(e.shiftKey || e.metaKey || e.ctrlKey)) onSelect("click");
       }}
       role="DraggableBox"
       spacing={0}
@@ -212,14 +258,30 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
         p={'sm'}
       >
         <Flex justify={'space-between'}>
-          <Text
-            size={"md"}
-            color={'white'}
-            weight={900}
-            align={"left"}
-          >
-            {` ${atom.nickname} `}
-          </Text>
+          {renaming ? (
+            <TextInput
+              size={"xs"}
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.currentTarget.value)}
+              onBlur={() => finishRename(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") finishRename(true);
+                if (e.key === "Escape") finishRename(false);
+              }}
+            />
+          ) : (
+            <Text
+              size={"md"}
+              color={'white'}
+              weight={900}
+              align={"left"}
+              title={"Double-click to rename"}
+              onDoubleClick={() => onSelect && startRename()}
+            >
+              {` ${atom.nickname} `}
+            </Text>
+          )}
           <ActionIcon variant={'transparent'} color={'dark'} radius={'xl'} size={'sm'} onClick={() => setModalOpened(true)}>
             <IconPencil color={'white'}/>
           </ActionIcon>
@@ -237,12 +299,12 @@ export function AtomContents({ atom, contentsBeingDragged, atoms }: Props) {
             </Flex>
             {atom.srcAtom.fromRelations.map((rel) => {
               if (rel.arityCount > 2) {
-                return <>
+                return <React.Fragment key={rel.id}>
                   <HighArityConn color={theme.colors.gray[5]} name={rel.label} atom={atom} relation={rel} toggleModal={setDependsModalOpened} setFrom={setFromAtom}/>
                   <ConnDependencyModal setModalOpened={setDependsModalOpened} opened={dependsModalOpened} relation={rel} fromAtom={fromAtom} atoms={atoms}/>
-                </>
+                </React.Fragment>
               } else {
-                return <ConnectionNode color={theme.colors.gray[5]} name={rel.label} atom={atom} relation={rel} />
+                return <ConnectionNode key={rel.id} color={theme.colors.gray[5]} name={rel.label} atom={atom} relation={rel} />
               }
             })}
           </div>

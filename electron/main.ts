@@ -143,6 +143,46 @@ if (isDev) {
 	});
 }
 
+/*
+ * Editor IPC handlers. Registered once here, not in createWindow: that runs again when the dock icon
+ * reopens a closed window, and registering a handler twice throws before the page loads.
+ *
+ * Handle when the render process asks to save.
+ */
+ipcMain.handle("get-save", async (event, arg: string) => {
+	fs.writeFileSync(file, arg);
+});
+
+/**
+ * Handle when the render process asks to run.
+ * Does NOT call save() automatically anymore.
+ */
+ipcMain.handle("get-run", async (event, arg: string) => {
+	if (!win || !file) return;
+	try {
+		const dir = path.join(app.getPath("userData"), "run");
+		fs.mkdirSync(dir, { recursive: true });
+		const filename = path.join(dir, path.basename(file) + "__samp");
+		fs.writeFileSync(filename, arg);
+		await postJson("/shakudo", { path: filename });
+	} catch (err) {
+		console.error("shakudo backend error", err);
+	}
+});
+
+
+ipcMain.handle("get-open-prompt", async (event, arg: any) => {
+	let res = await prompt({
+		title: arg.title || "",
+		label: arg.label || "",
+		value: arg.value || "",
+		inputAttrs: arg.inputAttrs || {},
+		type: 'input'
+	}).catch(console.error);
+	let result = await res;
+	return result;
+});
+
 /* Add Crucible IPC Handlers */
 registerCrucibleHandlers(() => win, openProject);
 
@@ -282,43 +322,6 @@ async function createWindow() {
 	 */
 	const menu = Menu.buildFromTemplate(menuItems);
 	Menu.setApplicationMenu(menu);
-
-	/**
-	 * Handle when the render process asks to save.
-	 */
-	ipcMain.handle("get-save", async (event, arg: string) => {
-		fs.writeFileSync(file, arg);
-	});
-
-	/**
-	 * Handle when the render process asks to run.
-	 * Does NOT call save() automatically anymore.
-	 */
-	ipcMain.handle("get-run", async (event, arg: string) => {
-		if (!win || !file) return;
-		try {
-			const dir = path.join(app.getPath("userData"), "run");
-			fs.mkdirSync(dir, { recursive: true });
-			const filename = path.join(dir, path.basename(file) + "__samp");
-			fs.writeFileSync(filename, arg);
-			await postJson("/shakudo", { path: filename });
-		} catch (err) {
-			console.error("shakudo backend error", err);
-		}
-	});
-
-
-	ipcMain.handle("get-open-prompt", async (event, arg: any) => {
-		let res = await prompt({
-			title: arg.title || "",
-			label: arg.label || "",
-			value: arg.value || "",
-			inputAttrs: arg.inputAttrs || {},
-			type: 'input'
-		}).catch(console.error);
-		let result = await res;
-		return result;
-	});
 
 	/**
 	 * Either run the app or build the app.

@@ -37,11 +37,21 @@ const api: Record<string, any> = {
   testAddAtom: (args: any) => ipcRenderer.invoke("crucible:test-add-atom", args),
   updateAtom: (args: any) => ipcRenderer.invoke("crucible:update-atom", args),
   deleteAtom: (id: number) => ipcRenderer.invoke("crucible:delete-atom", id),
+  deleteAtoms: (args: { testID: number; atomIDs: number[] }) => ipcRenderer.invoke("crucible:delete-atoms", args),
+  moveAtoms: (args: any) => ipcRenderer.invoke("crucible:move-atoms", args),
+  renameAtom: (args: { atomID: number; nickname: string }) => ipcRenderer.invoke("crucible:rename-atom", args),
+  pasteAtoms: (args: any) => ipcRenderer.invoke("crucible:paste-atoms", args),
+  undo: (testID: number) => ipcRenderer.invoke("crucible:undo", testID),
+  redo: (testID: number) => ipcRenderer.invoke("crucible:redo", testID),
+  historyState: (testID: number) => ipcRenderer.invoke("crucible:history-state", testID),
   getPredicates: (testID: number) => ipcRenderer.invoke("crucible:get-predicates", testID),
   updatePredicateState: (args: any) => ipcRenderer.invoke("crucible:update-pred-state", args),
   updatePredParam: (args: any) => ipcRenderer.invoke("crucible:update-pred-param", args),
+  // returns a function that stops listening
   listenForCanvasChange: (cb: Function) => {
-    ipcRenderer.on("crucible:canvas-update", (e: any, v: any) => cb(e, v));
+    const handler = (e: any, v: any) => cb(e, v);
+    ipcRenderer.on("crucible:canvas-update", handler);
+    return () => ipcRenderer.removeListener("crucible:canvas-update", handler);
   },
   listenForPredicatesChange: (cb: Function) => {
     ipcRenderer.on("crucible:predicates-update", (e: any, v: any) => cb(e, v));
@@ -53,6 +63,8 @@ const api: Record<string, any> = {
   createDependentConnection: (args: any) => ipcRenderer.invoke("crucible:create-connection", args),
   createHighConnection: (args: any) => ipcRenderer.invoke("crucible:create-high-connection", args),
   deleteConnection: (id: number) => ipcRenderer.invoke("crucible:delete-connection", id),
+  deleteConnections: (args: { testID: number; connectionIDs: number[] }) =>
+    ipcRenderer.invoke("crucible:delete-connections", args),
   connectionNodeEnabled: (args: any) => ipcRenderer.invoke("crucible:connection-enabled", args),
   runTest: (args: { projectID: number; testID: number }) => ipcRenderer.invoke("crucible:run-test", args),
   isTestsWindow: () => window.location.hash === "#tests",

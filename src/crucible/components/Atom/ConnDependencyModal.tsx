@@ -56,22 +56,22 @@ function ConnDependencyModal({ setModalOpened, opened, relation, fromAtom, atoms
     const atomTwoID = parseInt(twoSelected)
     const atomThreeID = parseInt(threeSelected)
 
-    window.electronAPI.helloWorld({
+    window.electronAPI.createHighConnection({
       projectID: fromAtom.srcAtom.projectID,
       testID: fromAtom.testID,
       atomOneID,
       atomTwoID,
       atomThreeID,
       relation
+    }).then((resp: { success: boolean; error?: string }) => {
+      if (resp.success) closeModal();
+      else showNotification({
+        title: "Cannot add connection",
+        message: resp.error ?? "Adding that connection would exceed its multiplicity.",
+        color: "red",
+        icon: <IconAlertTriangle />,
+      });
     })
-    // } ).then((resp: { success: boolean }) => {
-    //     if (!resp.success) {
-          // showNotification({
-          //   title: "Cannot add connection",
-          //   message: `Adding that connection would exceed its multiplicity.`,
-          //   color: "red",
-          //   icon: <IconAlertTriangle />,
-          // });
   }
 
   function getAtomsOfType(type: string) {
