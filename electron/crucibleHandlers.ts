@@ -3,9 +3,16 @@ import * as path from "path";
 import * as fs from "fs";
 import { prisma, crucibleProjectID, createProject, deleteProject } from "./crucibleDb";
 import { postJson } from "./crucibleAPI";
+import type { Atom, AtomSource, Connection } from "@prisma/client";
 
 const short = (label: string) => label.split("/")[1] ?? label;
 const nick = (s: string) => s.replace(/ /g, "");
+
+const ALLOY_KEYWORDS = new Set(
+	("abstract all and as assert but check disj else exactly extends fact for fun iden iff implies in Int int let " +
+		"lone module no none not one open or pred run seq set sig some sum this univ String var enum steps always " +
+		"eventually after before historically once until releases since triggered").split(" ")
+);
 
 async function buildTestCommand(projectID: number, testID: number) {
 	const test = await prisma.test.findFirst({
@@ -112,6 +119,57 @@ export function registerCrucibleHandlers(
 		connections: { include: { to: true, from: true, connLabel: true } },
 	};
 
+	// Undo and redo per test. Every change to a test's atoms or connections first saves a copy of them;
+	// undo puts the copy back with the same ids, so predicate parameters that point at atoms still match.
+	type Snapshot = { atoms: Atom[]; connections: Connection[] };
+	const history = new Map<number, { undo: Snapshot[]; redo: Snapshot[] }>();
+
+	const snapshot = async (testID: number): Promise<Snapshot> => ({
+		atoms: await prisma.atom.findMany({ where: { testID } }),
+		connections: await prisma.connection.findMany({ where: { testID } }),
+	});
+
+	const record = async (testID: number) => {
+		const h = history.get(testID) ?? { undo: [], redo: [] };
+		h.undo.push(await snapshot(testID));
+		if (h.undo.length > 100) h.undo.shift();
+		h.redo = [];
+		history.set(testID, h);
+	};
+
+	const restore = (testID: number, snap: Snapshot) =>
+		prisma.$transaction([
+			prisma.connection.deleteMany({ where: { testID } }),
+			prisma.atom.deleteMany({ where: { testID } }),
+			...snap.atoms.map((a) => prisma.atom.create({ data: a })),
+			// dependID is unique and points both ways in an arity-3 pair, so link the pairs once all rows exist
+			...snap.connections.map((c) => prisma.connection.create({ data: { ...c, dependID: null } })),
+			...snap.connections
+				.filter((c) => c.dependID !== null)
+				.map((c) => prisma.connection.update({ where: { id: c.id }, data: { dependID: c.dependID } })),
+		]);
+
+	const historyState = (testID: number) => {
+		const h = history.get(testID);
+		return { canUndo: !!h?.undo.length, canRedo: !!h?.redo.length };
+	};
+
+	const step = async (testID: number, dir: "undo" | "redo") => {
+		const h = history.get(testID);
+		const from = dir === "undo" ? h?.undo : h?.redo;
+		const to = dir === "undo" ? h?.redo : h?.undo;
+		const snap = from?.pop();
+		if (!snap || !to) return historyState(testID);
+		to.push(await snapshot(testID));
+		await restore(testID, snap);
+		send("crucible:canvas-update");
+		return historyState(testID);
+	};
+
+	ipcMain.handle("crucible:undo", async (_e, testID: number) => step(testID, "undo"));
+	ipcMain.handle("crucible:redo", async (_e, testID: number) => step(testID, "redo"));
+	ipcMain.handle("crucible:history-state", async (_e, testID: number) => historyState(testID));
+
     ipcMain.handle("crucible:get-open-project", async () => crucibleProjectID);
 
 	ipcMain.handle("crucible:list-projects", async () =>
@@ -181,6 +239,7 @@ export function registerCrucibleHandlers(
 		const test = await prisma.test.findFirst({ where: { id: testID } });
 		const src = await prisma.atomSource.findFirst({ where: { id: sourceAtomID } });
 		if (!test || !src) return;
+		await record(testID);
 		await prisma.atom.create({
 			data: {
 				testID, srcID: sourceAtomID, top, left,
@@ -192,14 +251,141 @@ export function registerCrucibleHandlers(
 	});
 
 	ipcMain.handle("crucible:update-atom", async (_e, { atomID, left, top }) => {
+		const atom = await prisma.atom.findFirst({ where: { id: atomID } });
+		if (!atom) return;
+		await record(atom.testID);
 		await prisma.atom.update({ where: { id: atomID }, data: { left, top } });
 		send("crucible:canvas-update");
 	});
 
+	// Moving a selection: one undo step for all of it
+	ipcMain.handle("crucible:move-atoms", async (_e, { testID, moves }: { testID: number; moves: { atomID: number; left: number; top: number }[] }) => {
+		if (moves.length === 0) return;
+		await record(testID);
+		await prisma.$transaction(
+			moves.map((m) => prisma.atom.update({ where: { id: m.atomID }, data: { left: m.left, top: m.top } }))
+		);
+		send("crucible:canvas-update");
+	});
+
 	ipcMain.handle("crucible:delete-atom", async (_e, atomID: number) => {
+		const atom = await prisma.atom.findFirst({ where: { id: atomID } });
+		if (!atom) return { success: false, error: "Atom not found" };
+		await record(atom.testID);
 		await prisma.atom.delete({ where: { id: atomID } }); // connections cascade
 		send("crucible:canvas-update");
 		return { success: true, error: null };
+	});
+
+	ipcMain.handle("crucible:delete-atoms", async (_e, { testID, atomIDs }: { testID: number; atomIDs: number[] }) => {
+		if (atomIDs.length === 0) return;
+		await record(testID);
+		await prisma.atom.deleteMany({ where: { testID, id: { in: atomIDs } } });
+		send("crucible:canvas-update");
+	});
+
+	// The name is used as-is in the Alloy command, so it has to be a plain Alloy name that nothing in the model uses.
+	ipcMain.handle("crucible:rename-atom", async (_e, { atomID, nickname }: { atomID: number; nickname: string }) => {
+		const name = String(nickname).trim();
+		const atom = await prisma.atom.findFirst({ where: { id: atomID }, include: { test: true } });
+		if (!atom) return { success: false, error: "Atom not found." };
+		if (name === atom.nickname) return { success: true };
+		if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
+			return { success: false, error: "Use letters, digits and _, starting with a letter." };
+		}
+		const project = await prisma.project.findFirst({
+			where: { id: atom.test.projectID },
+			include: { atoms: true, relations: true, predicates: true },
+		});
+		const modelNames = [
+			...(project?.atoms.map((a) => short(a.label)) ?? []),
+			...(project?.relations.map((r) => r.label) ?? []),
+			...(project?.predicates.map((p) => p.name) ?? []),
+		];
+		if (ALLOY_KEYWORDS.has(name)) return { success: false, error: `${name} is an Alloy keyword.` };
+		if (modelNames.includes(name)) return { success: false, error: `${name} is already a name in the model.` };
+		if (await prisma.atom.findFirst({ where: { testID: atom.testID, nickname: name } })) {
+			return { success: false, error: `${name} is already used in this test.` };
+		}
+
+		await record(atom.testID);
+		// connections keep their own copy of the names; an atom that is third in an arity-3 pair is named on the pair's first row
+		const thirds = await prisma.connection.findMany({ where: { toID: atomID, order: 2 } });
+		await prisma.$transaction([
+			prisma.atom.update({ where: { id: atomID }, data: { nickname: name } }),
+			prisma.connection.updateMany({ where: { fromID: atomID }, data: { fromNick: name } }),
+			prisma.connection.updateMany({ where: { toID: atomID }, data: { toNick: name } }),
+			...thirds
+				.filter((c) => c.dependID !== null)
+				.map((c) => prisma.connection.update({ where: { id: c.dependID as number }, data: { finalNick: name } })),
+		]);
+		send("crucible:canvas-update");
+		return { success: true };
+	});
+
+	// Paste copied atoms, and the connections between them, `offset` down and right of where they were copied.
+	// Atoms from another project, and one/lone atoms the test already has, are left out.
+	ipcMain.handle("crucible:paste-atoms", async (_e, args: { testID: number; atoms: Atom[]; connections: Connection[]; offset: number }) => {
+		const { testID, atoms, connections, offset } = args;
+		const test = await prisma.test.findFirst({ where: { id: testID } });
+		if (!test) return { ids: [], skipped: atoms.length };
+
+		const plan: { from: Atom; src: AtomSource }[] = [];
+		for (const a of atoms) {
+			const src = await prisma.atomSource.findFirst({ where: { id: a.srcID } });
+			if (!src || src.projectID !== test.projectID) continue;
+			if (src.isLone || src.isOne) {
+				const exists = (await prisma.atom.findFirst({ where: { testID, srcID: src.id } })) || plan.some((p) => p.src.id === src.id);
+				if (exists) continue;
+			}
+			plan.push({ from: a, src });
+		}
+		if (plan.length === 0) return { ids: [], skipped: atoms.length };
+
+		await record(testID);
+		const made = new Map<number, Atom>();
+		let count = test.atomCount;
+		for (const { from, src } of plan) {
+			let nickname = `${short(src.label)}${count++}`;
+			while (await prisma.atom.findFirst({ where: { testID, nickname } })) nickname = `${short(src.label)}${count++}`;
+			made.set(from.id, await prisma.atom.create({
+				data: { testID, srcID: src.id, nickname, left: from.left + offset, top: from.top + offset },
+			}));
+		}
+		await prisma.test.update({ where: { id: testID }, data: { atomCount: count } });
+
+		// A connection comes along when both its ends did; an arity-3 pair only when its partner does too
+		const copied = new Map(connections.map((c) => [c.id, c]));
+		const bothEnds = (c: Connection) => made.has(c.fromID) && made.has(c.toID);
+		const keep = connections.filter((c) => {
+			if (!bothEnds(c)) return false;
+			if (c.order === null) return true;
+			const partner = c.dependID !== null ? copied.get(c.dependID) : undefined;
+			return !!partner && bothEnds(partner);
+		});
+		const newConn = new Map<number, number>();
+		for (const c of keep) {
+			const fromAtom = made.get(c.fromID) as Atom;
+			const toAtom = made.get(c.toID) as Atom;
+			const third = c.order === 1 ? made.get((copied.get(c.dependID as number) as Connection).toID) : undefined;
+			const row = await prisma.connection.create({
+				data: {
+					projectID: test.projectID, testID, order: c.order,
+					fromID: fromAtom.id, toID: toAtom.id, fromNick: fromAtom.nickname, toNick: toAtom.nickname,
+					fromLabel: c.fromLabel, toLabel: c.toLabel, label: c.label,
+					finalNick: third ? third.nickname : null,
+				},
+			});
+			newConn.set(c.id, row.id);
+		}
+		for (const c of keep) {
+			if (c.dependID !== null && newConn.has(c.dependID)) {
+				await prisma.connection.update({ where: { id: newConn.get(c.id) as number }, data: { dependID: newConn.get(c.dependID) } });
+			}
+		}
+
+		send("crucible:canvas-update");
+		return { ids: Array.from(made.values()).map((a) => a.id), skipped: atoms.length - plan.length };
 	});
 
 	ipcMain.handle("crucible:get-predicates", async (_e, testID: number) =>
@@ -310,6 +496,7 @@ export function registerCrucibleHandlers(
 			if (existing) return { success: false };
 		}
 
+		await record(fromAtom.testID);
 		const connection = await prisma.connection.create({
 			data: {
 				fromID: fromAtom.id,
@@ -348,6 +535,7 @@ export function registerCrucibleHandlers(
 		);
 		if (!one || !two || !three) return { success: false };
 
+		await record(testID);
 		const base = {
 			fromLabel: relation.fromLabel, toLabel: relation.toLabel,
 			label: relation.label, projectID, testID, fromID: one.id, fromNick: one.nickname,
@@ -365,9 +553,13 @@ export function registerCrucibleHandlers(
 		return { success: true };
 	});
 
+	// The other half of an arity-3 pair goes with it (dependsOn cascades)
 	ipcMain.handle("crucible:delete-connection", async (_e, atomID: number) => {
+		const atom = await prisma.atom.findFirst({ where: { id: atomID } });
+		if (!atom) return { success: false, error: "Atom not found" };
+		await record(atom.testID);
 		await prisma.connection.deleteMany({
-			where: { OR: [{ toID: atomID }, { fromID: atomID }, { dependID: atomID }] },
+			where: { OR: [{ toID: atomID }, { fromID: atomID }] },
 		});
 		send("crucible:canvas-update");
 		return { success: true, error: null };

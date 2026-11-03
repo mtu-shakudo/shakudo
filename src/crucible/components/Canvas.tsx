@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useDrop } from "react-dnd";
+import { useDragLayer, useDrop } from "react-dnd";
 import Xarrow from "react-xarrows";
 import { showNotification } from "@mantine/notifications";
 import { IconAlertTriangle } from "@tabler/icons";
@@ -20,11 +20,16 @@ import { AtomContents } from "./Atom/AtomContents";
 interface Props {
   testID: number;
   zoom: number;
+  selected: number[];
+  setSelected(ids: number[]): void;
 }
+
+// What useDrag in AtomContents and AtomSourceItem hand over. `group` is the rest of the selection when a selected atom is dragged.
+type AtomDraggable = { data: Atom | AtomSource; group?: AtomWithSource[] };
 
 // The canvas is scaled with CSS zoom (react-xarrows still lines up under it; transform: scale doesn't).
 // Positions inside it stay in canvas units, but the pointer is in screen pixels, so drops divide by zoom.
-function Canvas({ testID, zoom }: Props) {
+function Canvas({ testID, zoom, selected, setSelected }: Props) {
 
   const AtomHeight = 120
   const AtomWidth = 240
@@ -42,14 +47,16 @@ function Canvas({ testID, zoom }: Props) {
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    window.electronAPI.listenForCanvasChange((_event: any, value: any) => {
-      console.log("got canvas update");
-      window.electronAPI.readTest(testID).then((data: TestWithCanvas) => {
-        setCanvas(data);
-      });
-    });
-  }, []);
+  useEffect(
+    () =>
+      window.electronAPI.listenForCanvasChange((_event: any, value: any) => {
+        console.log("got canvas update");
+        window.electronAPI.readTest(testID).then((data: TestWithCanvas) => {
+          setCanvas(data);
+        });
+      }),
+    []
+  );
 
   useEffect(() => {
     const loadCanvas = async () => {
@@ -139,7 +146,16 @@ function Canvas({ testID, zoom }: Props) {
             const top = Math.round(item.data.top + delta.y / zoom);
             if (monitor.getItemType() === ATOM) {
               console.log("Existing atom dragged.");
-              updateAtom(item.data.id, left, top);
+              if (item.group?.length) {
+                const moves = [item.data, ...item.group].map((a) => ({
+                  atomID: a.id,
+                  left: Math.round(a.left + delta.x / zoom),
+                  top: Math.round(a.top + delta.y / zoom),
+                }));
+                window.electronAPI.moveAtoms({ testID, moves });
+              } else {
+                updateAtom(item.data.id, left, top);
+              }
             }
           } else {
             if (monitor.getItemType() === ATOM_SOURCE) {
@@ -162,6 +178,22 @@ function Canvas({ testID, zoom }: Props) {
     }),
     [updateAtom, addNewAtom]
   );
+
+  // The rest of a selection being dragged is drawn by the drag layer, so hide it here meanwhile
+  const draggingGroup: AtomWithSource[] | null = useDragLayer((monitor) =>
+    monitor.isDragging() && monitor.getItemType() === ATOM ? monitor.getItem()?.group ?? null : null
+  );
+  const hidden = new Set(draggingGroup?.map((a) => a.id));
+
+  const isSelected = (id: number) => selected.includes(id);
+  // Click selects one atom; shift, ⌘ or ctrl adds or removes it. Pressing on an unselected atom selects it,
+  // so dragging it moves it alone; pressing on a selected one keeps the selection, so dragging moves them all.
+  const selectAtom = (id: number, how: "press" | "click" | "toggle") => {
+    if (how === "toggle") setSelected(isSelected(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+    else if (how === "click" || !isSelected(id)) setSelected([id]);
+  };
+  const groupFor = (id: number) =>
+    isSelected(id) && canvasItems ? canvasItems.atoms.filter((a) => a.id !== id && isSelected(a.id)) : [];
 
   if (canvasItems) {
     return (
@@ -225,25 +257,41 @@ function Canvas({ testID, zoom }: Props) {
             contentsBeingDragged={false}
             atom={atom}
             atoms={canvasItems.atoms}
+            selected={isSelected(atom.id)}
+            hidden={hidden.has(atom.id)}
+            onSelect={(how) => selectAtom(atom.id, how)}
+            groupFor={() => groupFor(atom.id)}
           />
         ))}
         {canvasItems.connections.map((connection, index) => {
-          // An arrow to an atom further left leaves from the left edge of the box instead of the relation's dot on
-          // the right, so it doesn't cut back across its own atom. When two atoms share several connections, each
-          // later one lands a little higher or lower on the target so they fan out instead of drawing on top of each other.
+          // Which sides an arrow joins depends on where the atoms sit. To an atom off to the right it leaves the
+          // relation's dot and enters the left edge; to one off to the left it leaves the left edge of the box and enters
+          // the right edge; to one above or below (columns overlapping) it runs between the bottom and top edges, so it
+          // never cuts back across either atom. When two atoms share several connections, each later one lands a little
+          // further along the target edge so they fan out instead of drawing on top of each other.
           const from = canvasItems.atoms.find((a) => a.id === connection.fromID);
           const to = canvasItems.atoms.find((a) => a.id === connection.toID);
-          const backward = !!from && !!to && to.left < from.left;
+          const side =
+            !from || !to || from.id === to.id || to.left >= from.left + ATOM_WIDTH ? "right"
+            : to.left + ATOM_WIDTH <= from.left ? "left"
+            : to.top > from.top ? "below" : "above";
           const sharedBefore = canvasItems.connections
             .slice(0, index)
             .filter((c) => c.fromID === connection.fromID && c.toID === connection.toID).length;
-          const fanOffset = (sharedBefore % 2 ? 1 : -1) * Math.ceil(sharedBefore / 2) * 16;
+          const fan = (sharedBefore % 2 ? 1 : -1) * Math.ceil(sharedBefore / 2) * 16;
+          const ends = {
+            right: { start: "right", end: "left", offset: { y: fan } },
+            left: { start: "left", end: "right", offset: { y: fan } },
+            below: { start: "bottom", end: "top", offset: { x: fan } },
+            above: { start: "top", end: "bottom", offset: { x: fan } },
+          } as const;
+          const { start, end, offset } = ends[side];
           return <Xarrow
             key={connection.id}
-            start={backward ? connection.fromID.toString() : connection.fromID + connection.label}
+            start={side === "right" ? connection.fromID + connection.label : connection.fromID.toString()}
             end={connection.toID.toString()}
-            startAnchor={backward ? "left" : "right"}
-            endAnchor={{ position: backward ? "right" : "left", offset: { y: fanOffset } }}
+            startAnchor={start}
+            endAnchor={{ position: end, offset }}
             labels={{
               middle: (
                 <span style={{ background: theme.colors.dark[7], color: "white", padding: "0 4px", borderRadius: 4, fontSize: 12 }}>
