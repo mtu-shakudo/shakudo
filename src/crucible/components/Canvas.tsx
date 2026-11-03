@@ -107,8 +107,33 @@ function Canvas({ testID, zoom, selected, setSelected }: Props) {
       });
   };
 
+  // Apply moves locally right away so the atom doesn't flash back to its old spot
+  // while the IPC round trip and re-read are in flight.
+  const applyMovesLocally = (
+    moves: { atomID: number; left: number; top: number }[]
+  ) => {
+    const byId = new Map(moves.map((m) => [m.atomID, m]));
+    setCanvas((prev) =>
+      prev
+        ? {
+            ...prev,
+            atoms: prev.atoms.map((a) => {
+              const m = byId.get(a.id);
+              return m ? { ...a, left: m.left, top: m.top } : a;
+            }),
+          }
+        : prev
+    );
+  };
+
+  const reloadCanvas = () =>
+    window.electronAPI.readTest(testID).then((data: TestWithCanvas) => setCanvas(data));
+
   const updateAtom = (atomID: number, left: number, top: number) => {
-    window.electronAPI.updateAtom({ atomID, left, top });
+    applyMovesLocally([{ atomID, left, top }]);
+    window.electronAPI
+      .updateAtom({ atomID, left, top })
+      .catch(() => reloadCanvas()); // roll back to DB state if the write fails
   };
 
   function quickInsert(selectedAtom: Atom | null, coords: any) {
@@ -152,7 +177,8 @@ function Canvas({ testID, zoom, selected, setSelected }: Props) {
                   left: Math.round(a.left + delta.x / zoom),
                   top: Math.round(a.top + delta.y / zoom),
                 }));
-                window.electronAPI.moveAtoms({ testID, moves });
+                applyMovesLocally(moves);
+                window.electronAPI.moveAtoms({ testID, moves }).catch(() => reloadCanvas());
               } else {
                 updateAtom(item.data.id, left, top);
               }
@@ -179,11 +205,25 @@ function Canvas({ testID, zoom, selected, setSelected }: Props) {
     [updateAtom, addNewAtom]
   );
 
-  // The rest of a selection being dragged is drawn by the drag layer, so hide it here meanwhile
-  const draggingGroup: AtomWithSource[] | null = useDragLayer((monitor) =>
-    monitor.isDragging() && monitor.getItemType() === ATOM ? monitor.getItem()?.group ?? null : null
-  );
-  const hidden = new Set(draggingGroup?.map((a) => a.id));
+  // Live drag state: which atoms are moving, and by how much (in screen px).
+  const drag = useDragLayer((monitor) => {
+    const dragging = monitor.isDragging() && monitor.getItemType() === ATOM;
+    const item = dragging ? (monitor.getItem() as AtomDraggable) : null;
+    const delta = dragging ? monitor.getDifferenceFromInitialOffset() : null;
+    return {
+      id: item?.data.id ?? null,
+      group: item?.group ?? null,
+      dx: delta?.x ?? 0,
+      dy: delta?.y ?? 0,
+    };
+  });
+  const hidden = new Set(drag.group?.map((a) => a.id));
+
+  // Same rounding as CustomDragLayer, so arrow ends sit exactly on the preview's edges.
+  const dragShift = (id: number) =>
+    drag.id !== null && (id === drag.id || drag.group?.some((a) => a.id === id))
+      ? { x: Math.round(drag.dx / zoom), y: Math.round(drag.dy / zoom) }
+      : { x: 0, y: 0 };
 
   const isSelected = (id: number) => selected.includes(id);
   // Click selects one atom; shift, ⌘ or ctrl adds or removes it. Pressing on an unselected atom selects it,
@@ -271,36 +311,47 @@ function Canvas({ testID, zoom, selected, setSelected }: Props) {
           // further along the target edge so they fan out instead of drawing on top of each other.
           const from = canvasItems.atoms.find((a) => a.id === connection.fromID);
           const to = canvasItems.atoms.find((a) => a.id === connection.toID);
+          const fs = from ? dragShift(from.id) : { x: 0, y: 0 };
+          const ts = to ? dragShift(to.id) : { x: 0, y: 0 };
+
+          const fromLeft = (from?.left ?? 0) + fs.x;
+          const fromTop = (from?.top ?? 0) + fs.y;
+          const toLeft = (to?.left ?? 0) + ts.x;
+          const toTop = (to?.top ?? 0) + ts.y;
+
           const side =
-            !from || !to || from.id === to.id || to.left >= from.left + ATOM_WIDTH ? "right"
-            : to.left + ATOM_WIDTH <= from.left ? "left"
-            : to.top > from.top ? "below" : "above";
+            !from || !to || from.id === to.id || toLeft >= fromLeft + ATOM_WIDTH ? "right"
+            : toLeft + ATOM_WIDTH <= fromLeft ? "left"
+            : toTop > fromTop ? "below" : "above";
+
           const sharedBefore = canvasItems.connections
             .slice(0, index)
             .filter((c) => c.fromID === connection.fromID && c.toID === connection.toID).length;
           const fan = (sharedBefore % 2 ? 1 : -1) * Math.ceil(sharedBefore / 2) * 16;
+
           const ends = {
-            right: { start: "right", end: "left", offset: { y: fan } },
-            left: { start: "left", end: "right", offset: { y: fan } },
-            below: { start: "bottom", end: "top", offset: { x: fan } },
-            above: { start: "top", end: "bottom", offset: { x: fan } },
+            right: { start: "right", end: "left", offset: { x: 0, y: fan } },
+            left: { start: "left", end: "right", offset: { x: 0, y: fan } },
+            below: { start: "bottom", end: "top", offset: { x: fan, y: 0 } },
+            above: { start: "top", end: "bottom", offset: { x: fan, y: 0 } },
           } as const;
           const { start, end, offset } = ends[side];
-          return <Xarrow
-            key={connection.id}
-            start={side === "right" ? connection.fromID + connection.label : connection.fromID.toString()}
-            end={connection.toID.toString()}
-            startAnchor={start}
-            endAnchor={{ position: end, offset }}
-            labels={{
-              middle: (
-                <span style={{ background: theme.colors.dark[7], color: "white", padding: "0 4px", borderRadius: 4, fontSize: 12 }}>
-                  {connection.connLabel.label}
-                </span>
-              ),
-            }}
+          return (
+            <Xarrow
+              key={connection.id}
+              start={side === "right" ? connection.fromID + connection.label : connection.fromID.toString()}
+              end={connection.toID.toString()}
+              startAnchor={{ position: start, offset: { x: fs.x, y: fs.y } }}
+              endAnchor={{ position: end, offset: { x: offset.x + ts.x, y: offset.y + ts.y } }}
+              labels={{
+                middle: (
+                    <span style={{ background: theme.colors.dark[7], color: "white", padding: "0 4px", borderRadius: 4, fontSize: 12 }}>
+                      {connection.connLabel.label}
+                    </span> ),
+              }}
             color={connection.connLabel.arityCount > 2 ? theme.colors.orange[5] : theme.colors.blue[5]}
-          />
+            />
+          );
           // const start = {x: connection.from.left + AtomWidth, y: connection.from.top + AtomHeight / 2}
           // const end = {x: connection.to.left, y: (connection.to.top + AtomHeight / 2)}
           //
