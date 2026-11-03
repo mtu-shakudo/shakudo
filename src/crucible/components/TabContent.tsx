@@ -104,10 +104,12 @@ function TabContent({ test, projectID }: Props) {
   const atomsInView = () =>
     Array.from(scrollRef.current?.querySelectorAll<HTMLElement>("[data-atom-id]") ?? []);
 
-  // Dragging on an empty part of the canvas draws a selection box. Holding space (or using the middle button)
-  // drags the view instead. Presses on atoms, their dots and the buttons are left alone.
+  // Dragging on an empty part of the canvas drags the view; a click there clears the selection. Holding space
+  // (or shift/⌘ to add to the selection) draws a selection box instead. Presses on atoms, their dots and the
+  // buttons are left alone.
   const space = useRef(false);
-  const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const pan = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   const marquee = useRef<{ x: number; y: number; base: number[] } | null>(null);
   const [marqueeBox, setMarqueeBox] = useState<{ left: number; top: number; right: number; bottom: number } | null>(null);
   const [panning, setPanning] = useState(false);
@@ -117,17 +119,19 @@ function TabContent({ test, projectID }: Props) {
     if (!box || (e.button !== 0 && e.button !== 1)) return;
     if ((e.target as HTMLElement).closest('[draggable="true"], button, input, .connectionNode')) return;
     box.setPointerCapture(e.pointerId);
-    if (e.button === 1 || space.current) {
-      pan.current = { x: e.clientX, y: e.clientY, left: box.scrollLeft, top: box.scrollTop };
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (e.button === 1 || !(space.current || additive)) {
+      pan.current = { x: e.clientX, y: e.clientY, left: box.scrollLeft, top: box.scrollTop, moved: e.button === 1 };
       setPanning(true);
       return;
     }
-    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     marquee.current = { x: e.clientX, y: e.clientY, base: additive ? selected : [] };
     if (!additive) setSelected([]);
   };
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pan.current) {
+      const dx = e.clientX - pan.current.x, dy = e.clientY - pan.current.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) pan.current.moved = true;
       scrollRef.current?.scrollTo(pan.current.left - (e.clientX - pan.current.x), pan.current.top - (e.clientY - pan.current.y));
       return;
     }
@@ -149,6 +153,7 @@ function TabContent({ test, projectID }: Props) {
     setSelected(Array.from(new Set([...m.base, ...hits])));
   };
   const onPointerUp = () => {
+    if (pan.current && !pan.current.moved) setSelected([]);
     pan.current = null;
     marquee.current = null;
     setMarqueeBox(null);
@@ -225,6 +230,7 @@ function TabContent({ test, projectID }: Props) {
       if (isTyping(e.target)) return;
       if (e.code === "Space") {
         space.current = true;
+        setSpaceHeld(true);
         // otherwise the scroll box pages down (or a focused toolbar button gets pressed)
         if (canvasActive.current) e.preventDefault();
       }
@@ -234,7 +240,10 @@ function TabContent({ test, projectID }: Props) {
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") space.current = false;
+      if (e.code === "Space") {
+        space.current = false;
+        setSpaceHeld(false);
+      }
     };
     window.addEventListener("pointerdown", onPointer, true);
     window.addEventListener("keydown", onKeyDown, true);
@@ -324,7 +333,7 @@ function TabContent({ test, projectID }: Props) {
           height: "100%",
           width: "100%",
           overflow: "scroll",
-          cursor: panning ? "grabbing" : "default",
+          cursor: panning ? "grabbing" : spaceHeld || marqueeBox ? "crosshair" : "grab",
           backgroundColor: theme.colors.gray[0],
           border: "solid 1px gray",
         })}

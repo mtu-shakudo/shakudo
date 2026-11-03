@@ -8,10 +8,10 @@ const ROWS: { group: string; rows: { label: string; ways: string[][] }[] }[] = [
   {
     group: "Canvas",
     rows: [
-      { label: "Pan", ways: [["Space", "drag"], ["Middle-drag"], ["Scroll"]] },
+      { label: "Pan", ways: [["Drag empty canvas"], ["Scroll"]] },
       { label: "Zoom", ways: [[MOD, "scroll"], ["Pinch"]] },
-      { label: "Box select", ways: [["Drag empty canvas"]] },
-      { label: "Add to selection", ways: [["Shift", "click"]] },
+      { label: "Box select", ways: [["Space", "drag"]] },
+      { label: "Add to selection", ways: [["Shift", "click"], ["Shift", "drag"]] },
       { label: "Rename atom", ways: [["Double-click name"]] },
     ],
   },
