@@ -174,11 +174,11 @@ export function AtomContents({ atom, contentsBeingDragged, atoms, selected, hidd
         toAtom,
         relation,
       })
-      .then((resp: { success: boolean }) => {
+      .then((resp: { success: boolean; error?: string }) => {
         if (!resp.success) {
           showNotification({
             title: "Cannot add connection",
-            message: `Adding that connection would exceed it's multiplicity.`,
+            message: resp.error ?? "Adding that connection would exceed its multiplicity.",
             color: "red",
             icon: <IconAlertTriangle />,
           });
@@ -239,6 +239,8 @@ export function AtomContents({ atom, contentsBeingDragged, atoms, selected, hidd
     <Stack
       id={atom.id.toString()}
       data-atom-id={atom.id}
+      data-left={atom.left}
+      data-top={atom.top}
       ref={atomRef}
       onMouseDown={(e) => {
         if (!onSelect || ownPress(e)) return;

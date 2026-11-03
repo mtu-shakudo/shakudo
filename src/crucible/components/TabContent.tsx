@@ -144,10 +144,21 @@ function TabContent({ test, projectID }: Props) {
       bottom: Math.max(m.y, e.clientY),
     };
     setMarqueeBox(rect);
+    // Under CSS zoom, Chromium reports the atoms' client rects at the wrong scale, so compare in canvas units:
+    // the box goes through the canvas's own rect and zoom, and atoms use their stored position and layout size.
+    const canvas = scrollRef.current?.querySelector(".canvas")?.getBoundingClientRect();
+    if (!canvas) return;
+    const z = zoom;
+    const box = {
+      left: (rect.left - canvas.left) / z,
+      top: (rect.top - canvas.top) / z,
+      right: (rect.right - canvas.left) / z,
+      bottom: (rect.bottom - canvas.top) / z,
+    };
     const hits = atomsInView()
       .filter((el) => {
-        const r = el.getBoundingClientRect();
-        return r.left < rect.right && r.right > rect.left && r.top < rect.bottom && r.bottom > rect.top;
+        const left = Number(el.dataset.left), top = Number(el.dataset.top);
+        return left < box.right && left + el.offsetWidth > box.left && top < box.bottom && top + el.offsetHeight > box.top;
       })
       .map((el) => Number(el.dataset.atomId));
     setSelected(Array.from(new Set([...m.base, ...hits])));

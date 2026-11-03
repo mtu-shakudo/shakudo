@@ -493,7 +493,15 @@ export function registerCrucibleHandlers(
 			const existing = await prisma.connection.findFirst({
 				where: { label: relation.label, fromLabel: relation.fromLabel, fromID: fromAtom.id, testID },
 			});
-			if (existing) return { success: false };
+			if (existing) return { success: false, error: "Adding that connection would exceed its multiplicity." };
+		}
+
+		// a relation is a set of tuples, so the same pair can't be in it twice
+		if (!dependency) {
+			const same = await prisma.connection.findFirst({
+				where: { label: relation.label, fromLabel: relation.fromLabel, fromID: fromAtom.id, toID: toAtom.id, testID: fromAtom.testID },
+			});
+			if (same) return { success: false, error: `${fromAtom.nickname} → ${toAtom.nickname} is already in ${relation.label}.` };
 		}
 
 		await record(fromAtom.testID);
@@ -525,7 +533,7 @@ export function registerCrucibleHandlers(
 			const existing = await prisma.connection.findMany({
 				where: { label: relation.label, fromID: atomOneID, testID },
 			});
-			if (existing.length > relation.arityCount - 1) return { success: false };
+			if (existing.length > relation.arityCount - 1) return { success: false, error: "Adding that connection would exceed its multiplicity." };
 		}
 
 		const [one, two, three] = await Promise.all(
@@ -533,7 +541,16 @@ export function registerCrucibleHandlers(
 				prisma.atom.findFirst({ where: { id, testID } })
 			)
 		);
-		if (!one || !two || !three) return { success: false };
+		if (!one || !two || !three) return { success: false, error: "Atom not found." };
+
+		// the same triple can't be in the relation twice: an order-1 row one→two whose partner goes to three
+		const firsts = await prisma.connection.findMany({
+			where: { label: relation.label, fromID: one.id, toID: two.id, order: 1, testID },
+		});
+		const partnerIDs = firsts.map((c) => c.dependID).filter((id): id is number => id !== null);
+		if (partnerIDs.length && (await prisma.connection.findFirst({ where: { id: { in: partnerIDs }, toID: three.id } }))) {
+			return { success: false, error: `${one.nickname} → ${two.nickname} → ${three.nickname} is already in ${relation.label}.` };
+		}
 
 		await record(testID);
 		const base = {
