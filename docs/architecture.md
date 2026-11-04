@@ -20,42 +20,62 @@ A full diagram is in [`architecture.tex`](architecture.tex). The latest version 
 
 ## Backend Architecture
 
-> This section is being written by the backend team. The headings below are a skeleton to fill in.
+Refer to this repository for the API code https://github.com/That1GuyWhoSucks/Shakudo_Crucible_API
 
-The backend is a Spring Boot server (`java/aSketch-API.jar`) that the main process starts at launch and calls over HTTP on `localhost`. It wraps the Alloy Analyzer, which parses and runs Alloy.
+The backend is a Spring Boot server (`java/aSketch-API.jar`) that the main process starts at launch. This server listens for specific requests which are set to execute specific Alloy commands and return data to the frontend from the Alloy process.
 
 ### Overview
 
-TODO: components (controllers, services, the Alloy wrapper) and how they relate. A diagram would help here.
+Controllers
+| Name | Role |
+| AlloyFileController | Responsible for loading and updating files |
+| AlloyTestController | Responsible for running tests sent by the frontend |
+| PIDController | Responsible for status checks via returning PID |
+| ShakudoController | Responsible for running Shakudo's backend |
+
+Models
+| Name | Role | Attributes |
+| AlloyFile | Stores all Alloy information about a file | String name, String path, ArrayList<Atom> atoms, ArrayList<AlloyFunction> functions |
+| AlloyFunction | Stores information about Alloy functions | String label, ArrayList<AlloyParameter> parameters |
+| AlloyParamater | Stores information about Alloy parameters | String label, String paramType |
+| AlloyRelation | Stores information about Alloy relations | String label, String multiplicity, String type |
+| Atom | The Alloy representation of a node | String label, Pos isEnum, Pos isLone, Pos isOne, Pos isSome, Pos isAbstract, ArrayList<AlloyRelation> relations, ArrayList<String> |parents, ArrayList<String> children |
+
+Repository
+| Name | Role |
+| AlloyFileRepository | Stores all `AlloyFile`'s |
+| AlloyTestRepository | Runs a given Alloy file |
+| PIDRepository | Returns the PID of the server process |
 
 ### Lifecycle
 
-TODO: how it starts and stops, the port it listens on (currently 10121), the Java version it requires, and what it logs.
+When the jar is run with java 18 or greater it creates a server that listens on port 10121. Logs are printed to the console on every command that is run. For specific logging information Refer to the API code inside the repository.
 
 ### REST API
 
 TODO: one entry per endpoint, with the request body, the response body, and error cases. The endpoints used by the main process today are:
 
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/pid` | GET | Health check and process id |
-| `/files` | POST | Parse an `.als` file into atoms, relations, and predicates |
-| `/tests` | POST | Run an Alloy command against an `.als` file and report whether it is satisfiable |
-| `/shakudo` | POST | Run the Shakudo editor's current text (the Run action) |
-
-TODO: confirm this list and the request and response shapes against the source.
+| Endpoint | Method | Purpose | Return |
+|---|---|---|---|
+| `/pid` | GET | Health check and process id | Returns the process ID |
+| `/files` | POST | Parse an `.als` file into atoms, relations, and predicates | Returns the parsed Alloy file on success |
+| `/files` | GET | Gets all parsed Alloy file data |
+| `/tests` | POST | Run an Alloy command against an `.als` file and report whether it is satisfiable | Returns a satisfying instance if possible, otherwise returns `null` |
+| `/shakudo` | POST | Run the Shakudo editor's current text (the Run action) | Returns `satisfiable` if the Alloy can be compiled, otherwise returns `not satisfiable` |
 
 ### Data Models
 
 TODO: the JSON objects exchanged with the main process, such as atoms, relations, and functions with their parameters.
+TBD: What data should be exchanged with main process
 
 ### Alloy Integration
 
-TODO: how the server calls the Alloy API, how files are parsed, how commands are run, and how errors (compile errors, no instance found) are reported back.
+The .jar comes bundled with Alloy 6.1 with which the backend uses to be able to parse, analyze, and run Alloy files. The default solver for both Crucible and Shakudo is SAT4J. Every command interacts with Alloy in it's own environment so future commands may be able to deviate if desired.
 
 ### Building and Testing
 
-TODO: how to build the JAR (`mvnw package`), where the source lives, and how to test an endpoint (for example with `curl`).
+To test the backend use `.\mvnw.cmd spring-boot:run` inside the API directory then run the application to connect to the dev server.
+To build the .jar run `.\mvnw.cmd clean package` inside the API directory.
 
 ## Where your data lives
 
