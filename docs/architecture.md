@@ -28,6 +28,7 @@ The backend is a Spring Boot server (`java/aSketch-API.jar`) that the main proce
 
 Controllers
 | Name | Role |
+|---|---|
 | AlloyFileController | Responsible for loading and updating files |
 | AlloyTestController | Responsible for running tests sent by the frontend |
 | PIDController | Responsible for status checks via returning PID |
@@ -35,6 +36,7 @@ Controllers
 
 Models
 | Name | Role | Attributes |
+|---|---|---|
 | AlloyFile | Stores all Alloy information about a file | String name, String path, ArrayList<Atom> atoms, ArrayList<AlloyFunction> functions |
 | AlloyFunction | Stores information about Alloy functions | String label, ArrayList<AlloyParameter> parameters |
 | AlloyParamater | Stores information about Alloy parameters | String label, String paramType |
@@ -43,6 +45,7 @@ Models
 
 Repository
 | Name | Role |
+|---|---|
 | AlloyFileRepository | Stores all `AlloyFile`'s |
 | AlloyTestRepository | Runs a given Alloy file |
 | PIDRepository | Returns the PID of the server process |
@@ -62,11 +65,6 @@ TODO: one entry per endpoint, with the request body, the response body, and erro
 | `/files` | GET | Gets all parsed Alloy file data |
 | `/tests` | POST | Run an Alloy command against an `.als` file and report whether it is satisfiable | Returns a satisfying instance if possible, otherwise returns `null` |
 | `/shakudo` | POST | Run the Shakudo editor's current text (the Run action) | Returns `satisfiable` if the Alloy can be compiled, otherwise returns `not satisfiable` |
-
-### Data Models
-
-TODO: the JSON objects exchanged with the main process, such as atoms, relations, and functions with their parameters.
-TBD: What data should be exchanged with main process
 
 ### Alloy Integration
 
@@ -92,13 +90,13 @@ You don't need to touch these files. To reset the app, delete `crucible.db` and 
 
 `<app data>` is:
 
-| Platform | Location |
-|---|---|
-| Windows | `%APPDATA%\my-app` |
-| macOS | `~/Library/Application Support/my-app` |
-| Linux | `~/.config/my-app` (TODO: update if the data path was moved off NFS homes) |
+| Platform | Dev Location | Prod Location |
+|---|---|---|
+| Windows | `%APPDATA%\my-app` | TODO |
+| macOS | `~/Library/Application Support/my-app` | TODO |
+| Linux | `~/.config/my-app` | TODO |
 
-Your original `.als` files are not stored in this folder. TODO: state whether Save overwrites the original file or a project copy.
+Your original `.als` files are not stored in this folder. Save overwrites the original file.
 
 ## Code layout
 

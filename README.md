@@ -15,16 +15,16 @@ Crucible was built as a standalone tool for [AUnit](https://kaiyuanw.github.io/p
 - **Block editor:** build Alloy predicates with Blockly. Compiling regenerates the Alloy in the text editor.
 - **Test builder:** create tests by dragging atoms onto a canvas and connecting them with relations, then set each predicate to valid or invalid and run the test.
 - **Projects:** each project wraps one `.als` file, its tests, and its saved state. Projects are chosen from a start screen and under the File menu.
-- **Plain `.als` import:** if a file has no Shakudo formatting, it is converted to Shakudo format when opened. TODO: document what the conversion produces.
+- **Plain `.als` import:** if a file has no Shakudo formatting, it is converted to Shakudo format when opened.
 - **Split view:** the block editor and the test view can share one window or be popped out into two.
 - **Safe re-import:** if an `.als` file's structure changes (signatures, relations, predicate names or parameters), Shakudo asks before clearing the tests that depended on it. Editing a predicate's body never triggers this.
 ## Download
  
-Download the latest build for your platform from the [releases]() page. TODO: add link.
+Download the latest build for your platform from the [releases](https://github.com/mtu-shakudo/shakudo/releases)
  
 - **Windows:** run the installer or `.exe`. Windows SmartScreen may warn about an unsigned app. Choose "More info", then "Run anyway".
 - **Linux / macOS:** make the file executable first (`chmod +x`). On Linux you may need to launch with `--no-sandbox`.
-- **All platforms:** [Java](https://adoptium.net/) must be installed and on your `PATH`. Shakudo starts a Java backend on launch. TODO: confirm the minimum Java version.
+- **All platforms:** [Java](https://adoptium.net/) must be installed and on your `PATH`. Shakudo starts a Java backend on launch. Java 18 the minimum Java version.
 ## Development
  
 Shakudo has three processes (renderer, main, and a Java backend). See [Architecture](docs/architecture.md) before changing code that crosses them.
@@ -34,6 +34,7 @@ Shakudo has three processes (renderer, main, and a Java backend). See [Architect
 - Node 15.14.0. Newer versions don't work yet, so use [`nvm`](https://github.com/nvm-sh/nvm).
 - [Yarn](https://yarnpkg.com/) 1.x (`npm i -g yarn`)
 - Java (a JDK, to rebuild the backend)
+
 **Setup and run**
  
 ```
@@ -54,11 +55,11 @@ Then delete `crucible.db` from your app data folder so a fresh copy of `template
  
 **Building the backend**
  
-TODO: document how to build `aSketch-API.jar` (`mvnw package`), and where the merged source lives.
+Refer to the instructions in [Architecture](docs/architecture.md): how the processes fit together, where data lives, and how the code is laid out.
  
 **Building a release**
  
-TODO: GitHub Actions. By hand, build on the target platform:
+TODO: How to use GitHub Actions
  
 ```
 yarn build
