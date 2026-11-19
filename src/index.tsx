@@ -10,11 +10,13 @@
  */
 import CodeMirror from "codemirror";
 import {BlocklyParse} from "./BlocklyParser";
+import {alloyToBlocksXml, AlloyParseError} from "./AlloyToBlocks";
 import Blockly from "blockly";
 import { mountCrucible } from "./crucible/mount";
 import { mountProjectSwitcher } from "./projects/mount";
 import {setupBlocks, setupToolboxContents, setupToolboxWorkspace, Alloy, op_internal_translate,
-					binding_blocks, set_op_blocks,  quant_list, un_op_list, bin_op_list, compare_op_list, set_bin_op_list} from "./alloy_generator"
+					binding_blocks, set_op_blocks,  quant_list, un_op_list, bin_op_list, compare_op_list, set_bin_op_list,
+					readingOrder, generateTabCode} from "./alloy_generator"
 
 
 /**
@@ -29,8 +31,8 @@ import "codemirror/theme/nord.css";
 //    and it's actually recommended in the Blockly code to replace this
 // this exists particularly for the sake of 'create variable' in alloy_generator
 Blockly.prompt = function(msg, defaultValue, callback) {
-	ipcRenderer.invoke("get-open-prompt", msg).catch(console.error).then((r) => {
-		callback(r);
+	ipcRenderer.invoke("get-open-prompt", { title: "Shakudo", label: msg, value: defaultValue }).catch(console.error).then((r) => {
+		callback(r ?? null);
 	});
 };
 
@@ -76,13 +78,69 @@ function setupAlert() {
 
 var currentParse: BlocklyParse;
 var selected_index: number = -1;
-var listBlocklyWorkplaces: { div: HTMLElement, workspace: Blockly.WorkspaceSvg, block_index: number, title: string }[] = [];
+// base: fingerprint of the tab's Alloy when its blocks last matched it (loaded or compiled); saved with the blocks.
+// warned: root blocks carrying the "Only one root block allowed!" warning.
+type TabWorkspace = { div: HTMLElement, workspace: Blockly.WorkspaceSvg, block_index: number, title: string, base: string, warned: Blockly.Block[] };
+var listBlocklyWorkplaces: TabWorkspace[] = [];
 var dirty = false;	// editor has changes not yet saved to the .als
 
 const tabTitle = (b, j: number) => (b.title ? b.title : `Block ${j}`);
 // What a tab's toolbox offers; saved blocks are only restored into a tab whose toolbox still matches
 const toolboxHidden = (b) => [...currentParse.fileHidden, ...b.hidden];
-const toolboxHash = (b) => JSON.stringify([b.fixed_set_names, Object.entries(b.fixed_predicates), Object.entries(b.fixed_predicates_inline), b.allow_multiple, toolboxHidden(b)]);
+const toolboxHash = (b) => JSON.stringify([b.fixed_set_names, Object.entries(b.fixed_predicates), Object.entries(b.fixed_predicates_inline), b.allow_multiple, toolboxHidden(b),
+	...(Object.keys(b.fixed_var_types).length ? [b.fixed_var_types] : [])]);
+
+// Saved blocks carry the fingerprint of the text they last matched, ahead of the XML
+const BASE_RE = /^<!--shakudo-base:([0-9a-z]*)-->/;
+const hashText = (text: string) => {
+	let h = 5381;
+	for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+	return h.toString(36);
+};
+const regionBase = (lines: string[]) => hashText(BlocklyParse.codeKey(lines));
+
+// The code some blocks write, on a throwaway workspace; null if they don't load
+function codeOfXml(xml: string): string | null {
+	const ws = new Blockly.Workspace();
+	try {
+		Blockly.Xml.domToWorkspace(Blockly.Xml.textToDom(xml), ws);
+		return BlocklyParse.codeKey(generateTabCode(ws).split("\n"));
+	} catch (e) {
+		return null;
+	} finally {
+		ws.dispose();
+	}
+}
+
+/**
+ * Which blocks a tab opens with. The text wins, but the saved blocks keep their layout when they mean the same thing,
+ * and keep unsaved block work when the text hasn't changed since they last matched it.
+ * A text that can't be built from blocks leaves the workspace empty.
+ */
+function chooseBlocks(w: TabWorkspace, saved: { xml: string } | undefined): string | null {
+	const pb = currentParse.locations[w.block_index].b;
+	const lines: string[] = pb.textLines;
+	w.base = regionBase(lines);
+	const m = saved ? saved.xml.match(BASE_RE) : null;
+	const savedBase = m ? m[1] : null;
+	const savedXml = saved ? saved.xml.replace(BASE_RE, "") : null;
+
+	if (savedXml && savedBase === w.base) return savedXml;		// text unchanged since the blocks matched it
+	if (BlocklyParse.codeKey(lines) === "") return savedXml;		// nothing written yet: keep uncompiled blocks
+	let parsed: string | null = null;
+	try {
+		parsed = alloyToBlocksXml(lines, pb);
+	} catch (e) {
+		const where = e instanceof AlloyParseError ? `line ${e.line + 1}: ` : "";
+		console.warn(`[shakudo] ${w.title} can't be built from blocks: ${where}${(e as Error).message}`);
+		return savedXml && savedBase === null ? savedXml : null;	// saves from before this keep loading as they did
+	}
+	if (savedXml && parsed) {
+		const a = codeOfXml(savedXml);
+		if (a !== null && a === codeOfXml(parsed)) return savedXml;	// same meaning: keep the saved layout
+	}
+	return parsed;
+}
 
 window.onresize = () => {
 	if(selected_index !== -1) {
@@ -158,33 +216,40 @@ window.onload = () => {
 		setupToolboxWorkspace(currBlock, workspace);
 
 		const title = tabTitle(currBlock, workspace_index);
+		const entry: TabWorkspace = { div: wrk_div, workspace, block_index, title, base: "", warned: [] };
 		// keep this tab's blocks in the project; UI events (select, scroll, zoom) don't change them
 		workspace.addChangeListener((e) => {
 			if (e.isUiEvent) return;
-			const xml = Blockly.Xml.domToText(Blockly.Xml.workspaceToDom(workspace));
-			ipcRenderer.invoke("crucible:save-workspace", { title, xml, metaHash: toolboxHash(currBlock) }).catch(console.error);
+			saveWorkspace(entry);
+			if (listBlocklyWorkplaces[selected_index] === entry) schedulePreview();
 		});
 
-		listBlocklyWorkplaces.push({
-			div: wrk_div,
-			workspace: workspace,
-			block_index: block_index,
-			title: title
-		});
+		listBlocklyWorkplaces.push(entry);
 	}
 
-	// Put saved blocks back into each tab whose toolbox hasn't changed since they were saved
-	function restoreWorkspaces(saved: { title: string, xml: string, metaHash: string }[]) {
+	function saveWorkspace(w: TabWorkspace) {
+		const xml = `<!--shakudo-base:${w.base}-->` + Blockly.Xml.domToText(Blockly.Xml.workspaceToDom(w.workspace));
+		const metaHash = toolboxHash(currentParse.locations[w.block_index].b);
+		ipcRenderer.invoke("crucible:save-workspace", { title: w.title, xml, metaHash }).catch(console.error);
+	}
+
+	// Fill each tab with blocks: built from its Alloy text, or its saved blocks (see chooseBlocks).
+	// Saved blocks only count for a tab whose toolbox hasn't changed since they were saved.
+	function loadWorkspaces(saved: { title: string, xml: string, metaHash: string }[]) {
 		for (const w of listBlocklyWorkplaces) {
 			const s = saved.find((x) => x.title === w.title && x.metaHash === toolboxHash(currentParse.locations[w.block_index].b));
-			if (!s) continue;
+			const xml = chooseBlocks(w, s);
+			if (!xml) continue;
 			// Blockly can't measure blocks in a hidden div, so show it while loading
 			const wasHidden = w.div.hidden;
 			w.div.hidden = false;
 			Blockly.svgResize(w.workspace);
 			Blockly.Events.disable();
 			try {
-				Blockly.Xml.domToWorkspace(Blockly.Xml.textToDom(s.xml), w.workspace);
+				Blockly.Xml.domToWorkspace(Blockly.Xml.textToDom(xml), w.workspace);
+			} catch (e) {
+				console.error(`[shakudo] ${w.title}: couldn't load blocks`, e);
+				w.workspace.clear();
 			} finally {
 				Blockly.Events.enable();
 				w.div.hidden = wasHidden;
@@ -229,6 +294,7 @@ window.onload = () => {
 			ipcRenderer.invoke("crucible:set-active-pred", listBlocklyWorkplaces[new_index].title).catch(console.error);
 
 			forceResize(listBlocklyWorkplaces[new_index]);
+			schedulePreview();
 		}
 
 		const _bli = listBlocklyWorkplaces[selected_index].block_index;
@@ -259,6 +325,7 @@ window.onload = () => {
 	// MUST be called before using getAllMarks()
 	// ALSO MUST do a setCursor(getCursor()) to clear selection, which also counts for some reason
 	let extra_mark_list = [];
+	let blockMarks: CodeMirror.TextMarker[] = [];	// one per location, so a tab's text can be read without clearing other marks
 	function clear_extra_marks() {
 		const n = extra_mark_list.length;
 		for(let i = n-1; i >= 0; i--) {
@@ -276,6 +343,7 @@ window.onload = () => {
 		no_instance_popup_hide();
 		blocklyDiv_container.innerHTML = "";
 		listBlocklyWorkplaces = [];
+		blockMarks = [];
 		const tabs_div = document.createElement("div");
 
 		let i = 0; let j = 0;
@@ -290,7 +358,7 @@ window.onload = () => {
 											inclusiveLeft: true,
 											inclusiveRight: true
 										};
-			editor.markText({line: loc.s, ch: 0}, {line: loc.s + loc.l - 1, ch: editor.getLine(loc.s+loc.l-1).length}, options);
+			blockMarks[i] = editor.markText({line: loc.s, ch: 0}, {line: loc.s + loc.l - 1, ch: editor.getLine(loc.s+loc.l-1).length}, options);
 
 			if(loc.b.represented) {
 				createTab(tabs_div, i, j, tabTitle(loc.b, j));
@@ -315,14 +383,22 @@ window.onload = () => {
 			editor.scrollIntoView({line: Math.max(0, _bls - 20), ch:0});
 			editor.setCursor({line: _bls, ch:0});
 
-			restoreWorkspaces(saved?.workspaces ?? []);
+			loadWorkspaces(saved?.workspaces ?? []);
 			const reopen = listBlocklyWorkplaces.findIndex((w) => w.title === saved?.activeTab);
 			if (reopen > 0) _int_tab_onclick(tabs_div.children.item(reopen));
 		}
 
 		applyCollapsed();
+		schedulePreview();
 		ipcRenderer.invoke("crucible:sync-als", collect_alloy_text()).catch(console.error);
 	});
+
+	// A tab's current Alloy text, as it stands in the editor
+	function regionLines(block_index: number): string[] {
+		const place = blockMarks[block_index]?.find();
+		if (!place) return currentParse.locations[block_index].b.textLines;
+		return editor.getRange(place.from, place.to).split("\n");
+	}
 
 	var collect_alloy_text = (): string => {
 		editor.setCursor(editor.getCursor("from"));
@@ -351,6 +427,7 @@ window.onload = () => {
 	// Lets main ask about unsaved changes before switching projects
 	editor.on("change", (_cm, change) => {
 		if (change.origin !== "setValue") dirty = true;
+		schedulePreview();	// comments typed into a tab show up in its preview
 	});
 	(window as any).shakudoIsDirty = () => dirty;
 	(window as any).shakudoSaveText = (): string => {
@@ -439,6 +516,9 @@ window.onload = () => {
 			// TODO: handle predefined variables.
 			// for now, just sigs -- assume set type
 			let get_fix_var_sig = block.getFieldValue('VAR');
+			if(block.type === "fixed_get_predef_var") {	// a predicate parameter: its declared sig
+				return [[ parseBlock.fixed_var_types[get_fix_var_sig] ?? get_fix_var_sig ]];
+			}
 			return [[ get_fix_var_sig ]]; //ugh
 		}
 		if(binding_blocks.includes(op)) {	// quantifiers, atm
@@ -518,62 +598,130 @@ window.onload = () => {
 		throw new Error("how did this happen");
 	};
 
-	ipcRenderer.on("cmd-compile", () => {
-		if(selected_index === -1) return;
-		const tab_div = shak_tabs_div.children.item(selected_index);
-		const tab_wrk = listBlocklyWorkplaces[selected_index].workspace;
-		const source_index = parseInt(tab_div.dataset.block_index);
-		const tab_block = currentParse.locations[source_index].b;
-		let code = "";
-
-		/*  Check for compilation error/etc  */
-		// Check for too many root blocks
-		if(tab_wrk.getTopBlocks().length > 1 && !tab_block.allow_multiple) {
-			let other_block = tab_wrk.getTopBlocks()[1];
-			show_error_on_target_block(other_block, "Only one root block allowed!");
-			flashWindow("red");
-			//Alloy.init(tab_wrk);
-			//code = Alloy.blockToCode(tab_wrk.getTopBlocks()[0]);
-			return;
+	/**
+	 * What stops a tab compiling, checked in the order Compile Current Tab reports them; null when it would compile.
+	 * blocks: where to point; note: the same in a few words, for the preview.
+	 */
+	type CompileError = { kind: "roots" | "inputs" | "names", blocks: Blockly.Block[], message: string, note: string };
+	function compileError(ws: Blockly.WorkspaceSvg, tab_block): CompileError | null {
+		const tops = readingOrder(ws.getTopBlocks(false));
+		if(tops.length > 1 && !tab_block.allow_multiple) {
+			return { kind: "roots", blocks: tops.slice(1), message: "Only one root block allowed!", note: `${tops.length} root blocks, only one allowed` };
 		}
-		// Check for incomplete block structure
-		for(let block of tab_wrk.getTopBlocks()) {
+		for(let block of tops) {
 			if(! block.allInputsFilled()) {
-				show_error_on_target_block(block, "Missing inputs -- incomplete block!");
-				flashWindow("red");
-				return;
+				return { kind: "inputs", blocks: [block], message: "Missing inputs -- incomplete block!", note: "a block has an empty socket" };
 			}
 		}
-		// check for wrongly bound variables and wrong types
-		let fixed_vals = tab_block.fixed_set_names;	// the predefined sigs, for now
-		for(let block of tab_wrk.getTopBlocks()) {
+		for(let block of tops) {
 			try {
 				descend_tree(tab_block, block, {});
 			} catch(e) {
 				if(e instanceof descend_tree_bounds__unboundException || e instanceof descend_tree_bounds__wrongTypeException || e instanceof descend_tree_bounds__rebindException) {
-					show_error_on_target_block(e.block, e.message);
-					flashWindow("red");
-					return;
+					return { kind: "names", blocks: [e.block], message: e.message, note: e.message.charAt(0).toLowerCase() + e.message.slice(1) };
 				}
-				throw e;
+				console.error(e);
+				return null;
 			}
 		}
+		return null;
+	}
 
-		//  Compile and update the editor
+	/*   Live preview: what Compile Current Tab would write for the open tab, even while it's unfinished  */
+	const preview_div = document.getElementById("preview_code") as HTMLElement;
+	const preview_title = document.getElementById("preview_title") as HTMLElement;
+	const preview_hint = document.getElementById("preview_hint") as HTMLElement;
+	const isMac = navigator.platform.toUpperCase().includes("MAC");
+	preview_hint.textContent = (isMac ? "⇧⌘A" : "Ctrl+Shift+A") + " shows the whole file";
+	const previewCm: CodeMirror.Editor = CodeMirror(preview_div, {
+		mode: {name: "javascript"},
+		theme: "nord",
+		lineNumbers: false,
+		lineWrapping: true,
+		readOnly: true,
+	});
+
+	// Extra root blocks get Blockly's warning icon, live
+	function setRootWarnings(w: TabWorkspace, err: CompileError | null) {
+		const warn = err && err.kind === "roots" ? err.blocks : [];
+		Blockly.Events.disable();
+		try {
+			for(const b of w.warned) if(b.workspace && !warn.includes(b)) b.setWarningText(null);
+			for(const b of warn) b.setWarningText(err!.message);
+			w.warned = warn;
+		} finally {
+			Blockly.Events.enable();
+		}
+	}
+
+	let previewQueued = false;
+	function schedulePreview() {
+		if(previewQueued) return;
+		previewQueued = true;
+		requestAnimationFrame(() => {
+			previewQueued = false;
+			updatePreview();
+		});
+	}
+	function updatePreview() {
+		if(selected_index === -1 || !listBlocklyWorkplaces[selected_index]) {
+			preview_title.textContent = "Alloy preview";
+			previewCm.setValue("-- This file has no block tabs.");
+			return;
+		}
+		const w = listBlocklyWorkplaces[selected_index];
+		const tab_block = currentParse.locations[w.block_index].b;
+		const err = compileError(w.workspace, tab_block);
+		setRootWarnings(w, err);
+		let code: string;
+		try {
+			code = generateTabCode(w.workspace, true);
+		} catch(e) {
+			code = `-- couldn't write this tab's Alloy: ${(e as Error).message}`;
+		}
+		const lines = BlocklyParse.assembleRegion(regionLines(w.block_index), code);
+		if(err) lines.unshift(`-- won't compile: ${err.note}`);
+		preview_title.textContent = w.title;
+		previewCm.setValue(lines.join("\n"));
+		if(err) previewCm.markText({line: 0, ch: 0}, {line: 0, ch: lines[0].length}, {className: "preview_error"});
+		lines.forEach((l, i) => {
+			for(let j = l.indexOf("▢"); j >= 0; j = l.indexOf("▢", j + 1)) {
+				previewCm.markText({line: i, ch: j}, {line: i, ch: j + 1}, {className: "preview_hole"});
+			}
+		});
+	}
+
+	ipcRenderer.on("cmd-compile", () => {
+		if(selected_index === -1) return;
+		const w = listBlocklyWorkplaces[selected_index];
+		const tab_wrk = w.workspace;
+		const source_index = w.block_index;
+		const tab_block = currentParse.locations[source_index].b;
+
+		/*  Check for compilation error/etc  */
+		const err = compileError(tab_wrk, tab_block);
+		if(err) {
+			show_error_on_target_block(err.blocks[0], err.message);
+			flashWindow("red");
+			return;
+		}
+
+		//  Compile and update the editor: the tab's comments stay where they were, around the new code
 		editor.setCursor(editor.getCursor("from"));
 		error_popup_hide();
 		no_instance_popup_hide();
 		flashWindow("green");
-		code = Alloy.workspaceToCode(tab_wrk);
-		let rendered_text = code.split("\n");
+		let rendered_text = BlocklyParse.assembleRegion(regionLines(source_index), generateTabCode(tab_wrk));
 
 		tab_block.textLines = rendered_text;
 		tab_block.dirty = true; tab_block.updateText();
-		//currentParse.updateTextLines();
 		clear_extra_marks();
-		let marks = editor.getAllMarks();
-		let place = marks[source_index].find();
+		let place = blockMarks[source_index].find();
 		editor.replaceRange(tab_block.dispLines.join("\n"), place.from, place.to);
+		// the blocks and the text match again
+		w.base = regionBase(rendered_text);
+		saveWorkspace(w);
+		schedulePreview();
 		// push the compiled alloy file to Crucible
 		ipcRenderer
 			.invoke("crucible:sync-als", collect_alloy_text())
@@ -592,9 +740,13 @@ window.onload = () => {
 	     Work and Test view each remember their own width. */
 	const main_div = document.querySelector(".main") as HTMLElement;
 	const divider = document.getElementById("divider") as HTMLElement;
-	const leftWidths = { work: 40, test: 40 };
+	const leftWidths = { work: 40, test: 40, preview: 28 };	// preview: Work view with the file hidden
 	try { Object.assign(leftWidths, JSON.parse(localStorage.getItem("shakudo-left-widths") || "{}")); } catch (e) {}
 	let view: "work" | "test" = "work";
+	// Work view shows the tab's live preview on the left; File > Show Alloy File swaps in the whole file
+	let fileShown = false;
+	try { fileShown = localStorage.getItem("shakudo-file-shown") === "1"; } catch (e) {}
+	const widthKey = (): "work" | "test" | "preview" => (view === "work" && !fileShown ? "preview" : view);
 
 	const setLeftWidth = (percent: number) => {
 		main_div.style.setProperty("--left-width", `${percent}%`);
@@ -621,14 +773,29 @@ window.onload = () => {
 		blocksCollapsed[view] = collapsed;
 		try { localStorage.setItem("shakudo-blocks-collapsed", JSON.stringify(blocksCollapsed)); } catch (e) {}
 		applyCollapsed();
-		setLeftWidth(leftWidths[view]);	// re-measure Blockly when it comes back
+		setLeftWidth(leftWidths[widthKey()]);	// re-measure Blockly when it comes back
 	};
 
 	const showView = (v: "work" | "test") => {
 		view = v;
 		applyCollapsed();
-		setLeftWidth(leftWidths[v]);
+		setLeftWidth(leftWidths[widthKey()]);
 	};
+
+	const applyFileShown = () => {
+		main_div.classList.toggle("file-hidden", !fileShown);
+		setLeftWidth(leftWidths[widthKey()]);
+		if(fileShown) editor.refresh(); else previewCm.refresh();
+		ipcRenderer.invoke("editor:file-shown", fileShown).catch(console.error);
+	};
+	const setFileShown = (shown: boolean) => {
+		fileShown = shown;
+		try { localStorage.setItem("shakudo-file-shown", shown ? "1" : "0"); } catch (e) {}
+		applyFileShown();
+		if(shown && crucible_div.classList.contains("show")) open_editor();	// asking for the file means the Work view
+		else if(shown) editor.focus();
+	};
+	ipcRenderer.on("cmd-show-file", (_e: any, shown: boolean) => setFileShown(shown));
 
 	// A press anywhere on the divider, button included: moving a few pixels drags (unfolding the blocks first
 	// if they're folded), releasing without moving is a click that folds/unfolds. Moves are tracked on the
@@ -647,8 +814,8 @@ window.onload = () => {
 			if (blocksCollapsed[view]) setCollapsed(false);
 		}
 		const box = main_div.getBoundingClientRect();
-		leftWidths[view] = Math.round(Math.min(80, Math.max(20, ((e.clientX - box.left) / box.width) * 100)));
-		setLeftWidth(leftWidths[view]);
+		leftWidths[widthKey()] = Math.round(Math.min(80, Math.max(15, ((e.clientX - box.left) / box.width) * 100)));
+		setLeftWidth(leftWidths[widthKey()]);
 	});
 	window.addEventListener("pointerup", () => {
 		if (!press) return;
@@ -660,11 +827,13 @@ window.onload = () => {
 	});
 	divider.addEventListener("dblclick", (e) => {
 		if (e.target === collapseBtn || blocksCollapsed[view]) return;	// double-clicking the button isn't a reset
-		leftWidths[view] = 40;
-		setLeftWidth(40);
+		const key = widthKey();
+		leftWidths[key] = key === "preview" ? 28 : 40;
+		setLeftWidth(leftWidths[key]);
 		saveLeftWidths();
 	});
 	showView("work");
+	applyFileShown();
 
 	const open_crucible = () => {
 		(document.activeElement as HTMLElement | null)?.blur(); // stop typing into the hidden editor
@@ -677,7 +846,8 @@ window.onload = () => {
 		crucible_div.classList.remove("show");
 		showView("work");
 		editor.refresh();
-		editor.focus();
+		previewCm.refresh();
+		if (fileShown) editor.focus();	// a hidden editor would still take typing
 		ipcRenderer.invoke("crucible:set-view", true).catch(console.error);
 	};
 
@@ -726,6 +896,7 @@ window.onload = () => {
 	compile_run_error_popup.getElementsByClassName("popup_button")[0].addEventListener("click", compile_run_error_popup_hide);
 
 	ipcRenderer.on("handle-error-run", (event: any, msg: string) => {
+		if (!fileShown) setFileShown(true);	// the error points at a line of the file
 		let mtch = msg.match(/Line ([0-9]+) column ([0-9]+)/);
 		if(mtch !== null) {
 			let error = {"y1": mtch[1],"x1": mtch[2],"y2": mtch[1],"x2": parseInt(mtch[2])+1 }; //todo change
@@ -757,6 +928,7 @@ window.onload = () => {
 	});
 
 	ipcRenderer.on("handle-error-compile", (event: any, error: {msg: string, x1: number, x2: number, y1: number, y2: number}) => {
+		if (!fileShown) setFileShown(true);
 		editor.setCursor(error.y1-1, error.x1 -1, {scroll: true});
 		showAlert(error.msg);
 		extra_mark_list.push(

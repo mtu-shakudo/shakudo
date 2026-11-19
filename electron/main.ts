@@ -183,6 +183,12 @@ ipcMain.handle("get-open-prompt", async (event, arg: any) => {
 	return result;
 });
 
+// The editor says whether the file is shown, so the menu's check mark follows it
+ipcMain.handle("editor:file-shown", async (_e, shown: boolean) => {
+	const item = Menu.getApplicationMenu()?.getMenuItemById("show-alloy-file");
+	if (item) item.checked = shown;
+});
+
 /* Add Crucible IPC Handlers */
 registerCrucibleHandlers(() => win, openProject);
 
@@ -274,6 +280,16 @@ async function createWindow() {
 					label: "Test",
 					accelerator: "CmdOrCtrl+Shift+T",
 					click: showTests
+				},
+				{ type: "separator" },
+				{
+					// Work view shows the open tab's live Alloy; this swaps in the whole file
+					id: "show-alloy-file",
+					label: "Show Alloy File",
+					type: "checkbox",
+					checked: false,
+					accelerator: "CmdOrCtrl+Shift+A",
+					click: (item) => win?.webContents.send("cmd-show-file", item.checked)
 				}
 			]
 		},

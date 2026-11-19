@@ -250,6 +250,61 @@ span.CodeMirror-selectedtext {
   margin: 0;
 }
 
+/* Work view with the file hidden: the left pane shows the open tab's live Alloy instead */
+.App .editor .preview {
+  display: none;
+}
+.App .main.file-hidden .editor > .CodeMirror {
+  display: none;
+}
+.App .main.file-hidden .editor .preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #2e3440;
+}
+.App .preview_head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 13px 14px 9px;
+  border-bottom: 1px solid #3b4252;
+  font-family: "Roboto", sans-serif;
+}
+.App .preview_title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #d8dee9;
+  font-size: 13px;
+  font-weight: 700;
+}
+.App .preview_hint {
+  margin-left: auto;
+  flex: none;
+  color: #616e88;
+  font-size: 11px;
+}
+.App .preview_code {
+  flex: 1;
+  min-height: 0;
+}
+.App .preview_code .CodeMirror-cursors {
+  display: none;
+}
+/* the "won't compile" line, over the comment colour */
+.App .preview_error,
+.App .preview_error * {
+  color: #e06c75 !important;
+}
+/* an empty socket */
+.App .preview_hole {
+  background: rgba(229, 192, 123, 0.22);
+  color: #e5c07b;
+  border-radius: 2px;
+}
+
 .App .crucible {
   display: none;
   position: absolute;

@@ -57,6 +57,11 @@ Alloy.addReservedWords( // https://alloytools.org/spec.html
   "abstract,after,all,always,and,as,assert,before,but,check,disj,else,enabled,event,eventually,exactly,extends,fact,for,fun,historically,iden,iff,implies,in,Int,invariant,let,lone,modifies,module,no,none,not,once,one,open,or,pred,releases,run,set,sig,since,some,steps,sum,triggered,univ,until,var"
 )
 
+// What an empty socket writes: nothing visible when compiling, a box in the live preview
+Alloy.HOLE = " ";
+Alloy.HOLE_STATEMENT = "";
+const stmtOrHole = (block, name) => Alloy.statementToCode(block, name) || (Alloy.HOLE_STATEMENT ? Alloy.INDENT + Alloy.HOLE_STATEMENT : "");
+
 Alloy.init = function(workspace) {
   Object.getPrototypeOf(this).init.call(this);
 
@@ -111,7 +116,7 @@ export function setupBlocks(): Blockly.Toolbox {
 
   // add the block type for fixed variables (not that any exist yet)
   for(let var_type of fixed_var_types) {
-    upd_block_defs.push( fixed_var_def_func(var_type, "var") );
+    upd_block_defs.push( fixed_var_def_func(var_type, ["var", "set"]) );
     Alloy['fixed_get_' + var_type] = get_func;
   }
 
@@ -133,7 +138,7 @@ export function setupBlocks(): Blockly.Toolbox {
 
       let inputList = [];
       for(let i = 0; i < n; ++i) {
-        var condn = Alloy.valueToCode(block, 'param_' + i, 0) || " ";
+        var condn = Alloy.valueToCode(block, 'param_' + i, 0) || Alloy.HOLE;
         inputList.push(condn);
       }
       code += inputList.join(", ");
@@ -160,8 +165,8 @@ export function setupBlocks(): Blockly.Toolbox {
   // formula quantifiers, aka that evaluate to a boolean, eg all k: Kitteh | pred(k)
   function quant_func(inp_str) {
     Alloy[inp_str] = function(block) {
-      var substatements = Alloy.statementToCode(block, 'statement');
-      var source_set = Alloy.valueToCode(block, 'condition', 0) || " ";
+      var substatements = stmtOrHole(block, 'statement');
+      var source_set = Alloy.valueToCode(block, 'condition', 0) || Alloy.HOLE;
       var variable = Alloy.nameDB_.getName(block.getFieldValue('NAME'), 'VARIABLE');
 
       var code = inp_str + ' ' + variable + ': ' + source_set + ' {\n'
@@ -178,14 +183,14 @@ export function setupBlocks(): Blockly.Toolbox {
   // wrap in parens if it has children... overnethusiastic but should be
   //   good enough for now, without wrapping literally everything
   function _wrapper(block, statement, func) {
-    var content = func(block, statement);
+    var content = func(block, statement).replace(/^\s+/, "");   // statements come indented; not inside brackets
     if(block.getChildren().length > 0 && block.getChildren()[0].getChildren().length > 0) {
       content = '( ' + content + ' )';
     }
     return content;
   };
-  var wrap_state = (block, statement) => _wrapper(block, statement, (b,s) => Alloy.statementToCode(b,s)  );
-  var wrap_value = (block, statement) => _wrapper(block, statement, (b, s) => Alloy.valueToCode(b, s, 0) || " " );
+  var wrap_state = (block, statement) => _wrapper(block, statement, (b,s) => stmtOrHole(b,s)  );
+  var wrap_value = (block, statement) => _wrapper(block, statement, (b, s) => Alloy.valueToCode(b, s, 0) || Alloy.HOLE );
 
 
   // unary formula operators
@@ -306,6 +311,12 @@ export function setupToolboxContents(block: ParseBlock, hidden = []) {
     },
   }; })));
 
+  const params = Object.keys(block.fixed_var_types);
+  if(params.length) {
+    toolbox["contents"].push({"kind": "label", "text": "Predicate Parameters:", "web-class": "toolbox_style", });
+    toolbox["contents"].push(...params.map(vname => ({ "kind": "block", "type": "fixed_get_predef_var", "fields": { "VAR": vname } })));
+  }
+
   toolbox["contents"].push(...[ {"kind": "label", "text": "Predefined Predicates:", "web-class": "toolbox_style", } ]);
   // TODO: Enforce types; implement named args; change the format for this all
   toolbox["contents"].push(...Object.entries(block.fixed_predicates).filter(([k,v]) => !(block.fixed_predicates_inline[k])).map( ([key, value]) => { return {
@@ -394,6 +405,79 @@ export function setupToolboxWorkspace(block: ParseBlock, workspace: Blockly.Work
 
 
 // ---------------------------------------------------------
+/*  A tab's code: its root blocks in reading order */
+
+/**
+ * Root blocks in reading order: blocks whose heights overlap form a row, read left to right;
+ * rows read top to bottom, like lines of text.
+ */
+export function readingOrder(blocks) {
+  const box = (b) => {
+    if (b.getBoundingRectangle) { const r = b.getBoundingRectangle(); return { top: r.top, bottom: r.bottom, left: r.left }; }
+    const xy = b.getRelativeToSurfaceXY();   // headless: no size, so only exact heights share a row
+    return { top: xy.y, bottom: xy.y, left: xy.x };
+  };
+  const items = blocks.map(b => ({ b, r: box(b) })).sort((p, q) => p.r.top - q.r.top);
+  const rows = [];
+  for (const it of items) {
+    const row = rows[rows.length - 1];
+    if (row && it.r.top < row.bottom) {
+      row.items.push(it);
+      row.bottom = Math.max(row.bottom, it.r.bottom);
+    } else {
+      rows.push({ bottom: it.r.bottom, items: [it] });
+    }
+  }
+  return rows.flatMap(row => row.items.sort((p, q) => p.r.left - q.r.left).map(it => it.b));
+}
+
+/**
+ * The Alloy for every root block of a workspace, in reading order, a blank line between them.
+ * With holes, empty sockets show as a box (the live preview); without, they write what Compile always has.
+ */
+export function generateTabCode(workspace, holes = false) {
+  Alloy.HOLE = holes ? "▢" : " ";
+  Alloy.HOLE_STATEMENT = holes ? "▢" : "";
+  try {
+    Alloy.init(workspace);
+    const parts = readingOrder(workspace.getTopBlocks(false)).map(b => {
+      let code = Alloy.blockToCode(b);
+      if (Array.isArray(code)) code = code[0];
+      return (code || "").replace(/\s+$/, "");
+    }).filter(code => code.trim());
+    Alloy.finish("");
+    return parts.join("\n\n");
+  } finally {
+    Alloy.HOLE = " ";
+    Alloy.HOLE_STATEMENT = "";
+  }
+}
+
+// ---------------------------------------------------------
+/*  Variable dropdowns: "New variable..." under Rename and Delete */
+
+const NEW_VARIABLE_ID = "SHAKUDO_NEW_VARIABLE_ID";
+const baseDropdownCreate = Blockly.FieldVariable.dropdownCreate;
+Blockly.FieldVariable.dropdownCreate = function() {
+  const options = baseDropdownCreate.call(this);
+  if (this.sourceBlock_ && this.sourceBlock_.workspace && !this.sourceBlock_.isInFlyout) options.push(["New variable...", NEW_VARIABLE_ID]);
+  return options;
+};
+const baseOnItemSelected = Blockly.FieldVariable.prototype.onItemSelected_;
+Blockly.FieldVariable.prototype.onItemSelected_ = function(menu, menuItem) {
+  if (menuItem.getValue() !== NEW_VARIABLE_ID) return baseOnItemSelected.call(this, menu, menuItem);
+  const workspace = this.sourceBlock_ && this.sourceBlock_.workspace;
+  if (!workspace) return;
+  const type = this.defaultType_ || "";
+  // the same name prompt the toolbox's "Create a local variable" button opens, then put the new name on this block
+  Blockly.Variables.createVariableButtonHandler(workspace, (name) => {
+    const created = name && workspace.getVariable(name, type);
+    if (created) this.setValue(created.getId());
+  }, type);
+};
+
+
+// ---------------------------------------------------------
 /*  Renderer -- type checking shapes */
 
 var CustomRenderer = function(name) {
@@ -439,7 +523,7 @@ CustomConstantsProvider.prototype.shapeFor = function(
   switch (connection.type) {
     case Blockly.INPUT_VALUE:
     case Blockly.OUTPUT_VALUE:
-      if(checks && checks.includes("set") ) {
+      if(checks && checks.includes("set") && !checks.includes("var")) {
         return this.SET_PUZZLE_TAB;
       }
       return this.PUZZLE_TAB;
@@ -515,7 +599,7 @@ create_var_def_func = (var_type) => { return {
       "defaultType": var_type
     }
   ],
-  "output": "var",    // Null means the return value can be of any type
+  "output": ["var", "set"],    // a variable is also a one-atom set, so it fits set sockets (Kitteh - k1)
   "colour": "#a83275",
 }; };
 

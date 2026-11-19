@@ -42,6 +42,7 @@ export class ParseBlock {
   public fixed_set_names: string[] = [];
   public fixed_predicates: string[] = [];
   public fixed_predicates_inline: boolean[] = []; // TODO do this better
+  public fixed_var_types: { [name: string]: string } = {};   // the enclosing predicate's parameters -> their sig
 
   public hidden: string[] = [];   // toolbox groups/operators from @shakudo-hide
   public auto: boolean = false;   // marker added by autoRegions; never written back on save
@@ -194,6 +195,7 @@ export class BlocklyParse {
     }
 
     let runners = [];
+    const enclosing = BlocklyParse.enclosingParams(lines);
 		for (let idx = 0; idx < lines.length; idx++) {
       const line = lines[idx];
       shak_line = BlocklyParse.extractShakudoComment(line);
@@ -215,6 +217,11 @@ export class BlocklyParse {
             if(p.name === autoTitle) continue;   // a predicate can't call itself
             newBlock.fixed_predicates[p.name] = p.types;
             newBlock.fixed_predicates_inline[p.name] = p.types.length <= 2;
+          }
+        }
+        if(newBlock.represented) {
+          for(const p of enclosing[idx] ?? []) {
+            if(!newBlock.fixed_var_types[p.name]) newBlock.fixed_var_types[p.name] = p.type;
           }
         }
         currBlock.next = newBlock;
@@ -373,19 +380,85 @@ export class BlocklyParse {
 
     const preds: { name: string, types: string[] }[] = [];
     for(const { name, params } of found) {
-      // "a, b: T, c: U" -> [T, T, U]
-      const types: string[] = [];
-      let waiting = 0;
-      for(const part of params.split(",").map(p => p.trim()).filter(p => p)) {
-        const colon = part.indexOf(":");
-        if(colon < 0) { waiting++; continue; }
-        const type = part.substring(colon + 1).trim();
-        for(let k = 0; k <= waiting; k++) types.push(type);
-        waiting = 0;
-      }
+      const types = BlocklyParse.parseParams(params).map(p => p.type);
       if(types.every(t => sigs.includes(t))) preds.push({ name, types });
     }
     return { sigs, preds };
+  };
+
+  /** "a, b: T, c: U" -> a: T, b: T, c: U */
+  public static parseParams(params: string): { name: string, type: string }[] {
+    const out: { name: string, type: string }[] = [];
+    let waiting: string[] = [];
+    for(const part of params.split(",").map(p => p.trim()).filter(p => p)) {
+      const colon = part.indexOf(":");
+      if(colon < 0) { waiting.push(part); continue; }
+      const type = part.substring(colon + 1).trim();
+      for(const name of [...waiting, part.substring(0, colon).trim()]) out.push({ name, type });
+      waiting = [];
+    }
+    return out;
+  };
+
+  /**
+   * For every line, the parameters of the pred/fun it sits inside (pred name[a, b: T] { ... }).
+   * Only parameters of a single signature, since only those can become blocks.
+   */
+  public static enclosingParams(src: string[]): ({ name: string, type: string }[] | undefined)[] {
+    const out: ({ name: string, type: string }[] | undefined)[] = [];
+    const comments = { inBlock: false };
+    let depth = 0;
+    let header: { name: string, type: string }[] | undefined = undefined;
+    let pending: { name: string, type: string }[] | undefined = undefined;
+    for(const raw of src) {
+      out.push(depth > 0 ? header : undefined);
+      const code = BlocklyParse.codeOnly(raw, comments);
+      if(depth === 0) {
+        const m = code.match(/^\s*(?:private\s+)?(?:pred|fun)\s+[\w'.]+\s*(?:[[(]([^\])]*)[\])])?/);
+        if(m) pending = BlocklyParse.parseParams(m[1] ?? "").filter(p => /^[\w']+$/.test(p.type) && /^[\w']+$/.test(p.name));
+      }
+      for(const ch of code) {
+        if(ch === "{") { if(depth === 0) { header = pending; pending = undefined; } depth++; }
+        else if(ch === "}") { depth = Math.max(0, depth - 1); if(depth === 0) header = undefined; }
+      }
+    }
+    return out;
+  };
+
+  /**
+   * A tab's text split around its code: comment and blank lines before the first code line (plus any
+   * comment lines between code lines), the code, and everything after the last code line. indent is the
+   * first code line's leading whitespace, so compiled code lines up with what was there.
+   */
+  public static splitRegion(lines: string[]): { before: string[], code: string[], after: string[], indent: string } {
+    const comments = { inBlock: false };
+    const isCode = lines.map(l => BlocklyParse.codeOnly(l, comments).trim() !== "");
+    const first = isCode.indexOf(true);
+    if(first < 0) {
+      const lead = lines.find(l => l.trim() !== "");
+      return { before: [...lines], code: [], after: [], indent: lead ? lead.match(/^\s*/)![0] : "" };
+    }
+    const last = isCode.lastIndexOf(true);
+    const before = lines.slice(0, first);
+    const code: string[] = [];
+    for(let i = first; i <= last; i++) {
+      if(isCode[i]) code.push(lines[i]);
+      else if(lines[i].trim() !== "") before.push(lines[i]);   // a comment between code lines moves above the code
+    }
+    return { before, code, after: lines.slice(last + 1), indent: lines[first].match(/^\s*/)![0] };
+  };
+
+  /** The tab's text after compiling: its comments kept where they were, the new code indented like the old. */
+  public static assembleRegion(oldLines: string[], code: string): string[] {
+    const { before, after, indent } = BlocklyParse.splitRegion(oldLines);
+    const codeLines = code === "" ? [] : code.split("\n").map(l => (l.trim() === "" ? "" : indent + l));
+    return [...before, ...codeLines, ...after];
+  };
+
+  /** The code in some lines, comments and spacing removed: two texts with the same key mean the same Alloy. */
+  public static codeKey(lines: string[]): string {
+    const comments = { inBlock: false };
+    return lines.map(l => BlocklyParse.codeOnly(l, comments).replace(/\s+/g, " ").trim()).filter(l => l).join("\n");
   };
 
   /** The line with comments removed, so braces and names in comments don't count. Tracks /* *\/ across lines. */

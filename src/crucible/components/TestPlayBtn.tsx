@@ -16,7 +16,7 @@ function TestPlayBtn({ disabled, projectID, testID }: Props) {
       if (data === "Pass") {
         showNotification({
           title: "Passed",
-          message: `The test is satisfiable`,
+          message: `The test is satisfied`,
           color: "green",
           icon: <IconCheck />,
         });
@@ -24,7 +24,7 @@ function TestPlayBtn({ disabled, projectID, testID }: Props) {
       } else if (data === "Fail") {
         showNotification({
           title: "Failed",
-          message: `The test is unsatisfiable`,
+          message: `The test is not satisfied`,
           color: "red",
           icon: <IconX />,
         });
