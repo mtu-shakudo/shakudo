@@ -454,6 +454,93 @@ export function generateTabCode(workspace, holes = false) {
 }
 
 // ---------------------------------------------------------
+/*  Math notation: the same blocks the way a discrete structures course writes them */
+
+const MATH_QUANT = { all: "∀", some: "∃", one: "∃!", lone: "∃≤1", no: "¬∃" };
+const MATH_LOGIC = { and: "∧", or: "∨", implies: "→", iff: "↔" };
+const MATH_SET = { "-": "−", "+": "∪", "&": "∩" };
+const MATH_CMP = { "=": "=", "!=": "≠" };
+// binding strength: a looser formula inside a tighter one gets brackets; a quantifier reaches as far right as it can
+const PREC = { quant: 0, iff: 1, implies: 2, or: 3, and: 4, not: 5, atom: 6 };
+const SET_PREC = { "-": 1, "+": 1, "&": 2, atom: 3 };
+
+const mathEsc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// k1 -> k₁ as a subscript; variables italic, signatures and predicates upright
+function mathName(name, kind) {
+  const m = String(name).match(/^(.*?[^\d])(\d+)$/);
+  const body = m ? `${mathEsc(m[1])}<sub>${m[2]}</sub>` : mathEsc(name);
+  return `<span class="math_${kind}">${body}</span>`;
+}
+const MATH_HOLE = '<span class="math_hole">▢</span>';
+const paren = (html) => `(${html})`;
+const blockOp = (block) => (block.getField("OP") ? block.getFieldValue("OP") : block.type);
+const isVarBlock = (b) => b && (b.type === "get_bound_var" || b.type === "fixed_get_predef_var");
+
+// a value: { html, prec }
+function mathValue(block, asSet) {
+  if (!block) return { html: MATH_HOLE, prec: SET_PREC.atom };
+  if (block.type === "get_bound_var" || block.type === "fixed_get_predef_var") {
+    const name = mathName(block.getField("VAR").getText(), "var");
+    return { html: asSet ? `{${name}}` : name, prec: SET_PREC.atom };   // an element where a set goes is a one-element set
+  }
+  if (block.type.startsWith("fixed_get_")) return { html: mathName(block.getFieldValue("VAR"), "sig"), prec: SET_PREC.atom };
+  const op = blockOp(block);
+  if (MATH_SET[op]) {
+    const prec = SET_PREC[op];
+    const l = mathValue(block.getInputTargetBlock("left_value"), true);
+    const r = mathValue(block.getInputTargetBlock("right_value"), true);
+    const lh = l.prec < prec ? paren(l.html) : l.html;
+    const rh = r.prec <= prec ? paren(r.html) : r.html;   // A − (B − C) keeps its brackets
+    return { html: `${lh} ${MATH_SET[op]} ${rh}`, prec };
+  }
+  return { html: mathEsc(block.type), prec: SET_PREC.atom };
+}
+
+// a formula: { html, prec }
+function mathFormula(block) {
+  if (!block) return { html: MATH_HOLE, prec: PREC.atom };
+  const op = blockOp(block);
+  if (MATH_QUANT[op]) {
+    const v = mathName(block.getField("NAME").getText(), "var");
+    const set = mathValue(block.getInputTargetBlock("condition"), true).html;
+    const body = mathFormula(block.getInputTargetBlock("statement"));
+    const bh = body.prec === PREC.quant || body.prec === PREC.atom || body.prec === PREC.not ? body.html : paren(body.html);
+    return { html: `${MATH_QUANT[op]}${v} ∈ ${set}, ${bh}`, prec: PREC.quant };
+  }
+  if (MATH_LOGIC[op]) {
+    const prec = PREC[op];
+    const assoc = op === "and" || op === "or";
+    const side = (name) => {
+      const f = mathFormula(block.getInputTargetBlock(name));
+      return f.prec < prec || (!assoc && f.prec === prec) ? paren(f.html) : f.html;
+    };
+    return { html: `${side("left_statement")} ${MATH_LOGIC[op]} ${side("right_statement")}`, prec };
+  }
+  if (op === "not") {
+    const f = mathFormula(block.getInputTargetBlock("statement"));
+    return { html: `¬${f.prec < PREC.not ? paren(f.html) : f.html}`, prec: PREC.not };
+  }
+  if (MATH_CMP[op]) {
+    const l = mathValue(block.getInputTargetBlock("left_value"), false).html;
+    const r = mathValue(block.getInputTargetBlock("right_value"), false).html;
+    return { html: `${l} ${MATH_CMP[op]} ${r}`, prec: PREC.atom };
+  }
+  if (block.type.startsWith("fixed_pred_")) {
+    const args = [];
+    for (let i = 0; block.getInput("param_" + i); i++) args.push(mathValue(block.getInputTargetBlock("param_" + i), false).html);
+    return { html: `${mathName(block.getFieldValue("VAR"), "pred")}(${args.join(", ")})`, prec: PREC.atom };
+  }
+  // a value block standing on its own
+  if (block.outputConnection) return { html: mathValue(block, false).html, prec: PREC.atom };
+  return { html: mathEsc(block.type), prec: PREC.atom };
+}
+
+/** Each root block of a workspace, in reading order, as math notation (HTML). */
+export function workspaceToMath(workspace) {
+  return readingOrder(workspace.getTopBlocks(false)).map(b => mathFormula(b).html);
+}
+
+// ---------------------------------------------------------
 /*  Variable dropdowns: "New variable..." under Rename and Delete */
 
 const NEW_VARIABLE_ID = "SHAKUDO_NEW_VARIABLE_ID";

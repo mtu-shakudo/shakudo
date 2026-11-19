@@ -13,8 +13,16 @@
 	<div class="main">
 		<div id="editor" class="editor">
 			<div id="preview" class="preview">
-				<div class="preview_head"><span id="preview_title" class="preview_title">Alloy preview</span><span id="preview_hint" class="preview_hint"></span></div>
+				<div class="preview_head">
+					<span id="preview_title" class="preview_title">Alloy preview</span>
+					<div class="preview_tabs" role="tablist" aria-label="Preview as">
+						<button id="preview_tab_alloy" class="preview_tab" role="tab" data-mode="alloy">Alloy</button>
+						<button id="preview_tab_math" class="preview_tab" role="tab" data-mode="math">Math</button>
+					</div>
+				</div>
 				<div id="preview_code" class="preview_code"></div>
+				<div id="preview_math" class="preview_math" hidden></div>
+				<div id="preview_hint" class="preview_hint"></div>
 			</div>
 			<div id="crucible" class="crucible">
 				<div id="crucible-root" style="width:100%;height:100%"></div>

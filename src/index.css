@@ -281,14 +281,84 @@ span.CodeMirror-selectedtext {
   font-weight: 700;
 }
 .App .preview_hint {
-  margin-left: auto;
   flex: none;
+  padding: 6px 14px 8px;
+  border-top: 1px solid #3b4252;
   color: #616e88;
+  font-family: "Roboto", sans-serif;
   font-size: 11px;
 }
-.App .preview_code {
+.App .preview_tabs {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  padding: 2px;
+  border-radius: 6px;
+  background: #3b4252;
+}
+.App .preview_tab {
+  border: 0;
+  border-radius: 4px;
+  padding: 3px 10px;
+  background: transparent;
+  color: #d8dee9;
+  font: 12px "Roboto", sans-serif;
+  cursor: pointer;
+}
+.App .preview_tab:hover {
+  color: #ffffff;
+}
+.App .preview_tab.active {
+  background: #61afef;
+  color: #21252b;
+}
+.App .preview_code,
+.App .preview_math {
   flex: 1;
   min-height: 0;
+}
+.App .preview_code[hidden],
+.App .preview_math[hidden] {
+  display: none;
+}
+/* math notation: one formula per root block */
+.App .preview_math {
+  overflow: auto;
+  padding: 14px 16px;
+  color: #eceff4;
+  font-family: "STIX Two Math", "Cambria Math", "Latin Modern Math", "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.7;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.App .preview_math p + p {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed #4c566a;
+}
+.App .math_var {
+  font-style: italic;
+  color: #eceff4;
+}
+.App .math_sig {
+  color: #8fbcbb;
+}
+.App .math_pred {
+  color: #88c0d0;
+}
+.App .math_hole {
+  background: rgba(229, 192, 123, 0.22);
+  color: #e5c07b;
+  border-radius: 2px;
+}
+.App .math_error {
+  color: #e06c75;
+  font: 13px "Roboto Mono", monospace;
+}
+.App .math_empty {
+  color: #616e88;
+  font: 13px "Roboto", sans-serif;
 }
 .App .preview_code .CodeMirror-cursors {
   display: none;

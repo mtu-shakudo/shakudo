@@ -16,7 +16,7 @@ import { mountCrucible } from "./crucible/mount";
 import { mountProjectSwitcher } from "./projects/mount";
 import {setupBlocks, setupToolboxContents, setupToolboxWorkspace, Alloy, op_internal_translate,
 					binding_blocks, set_op_blocks,  quant_list, un_op_list, bin_op_list, compare_op_list, set_bin_op_list,
-					readingOrder, generateTabCode} from "./alloy_generator"
+					readingOrder, generateTabCode, workspaceToMath} from "./alloy_generator"
 
 
 /**
@@ -641,6 +641,47 @@ window.onload = () => {
 		readOnly: true,
 	});
 
+	// The preview shows the tab as Alloy or as math notation; the choice is remembered
+	const preview_math = document.getElementById("preview_math") as HTMLElement;
+	const previewTabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".preview_tab"));
+	let previewMode: "alloy" | "math" = "alloy";
+	try { if (localStorage.getItem("shakudo-preview-mode") === "math") previewMode = "math"; } catch (e) {}
+	const applyPreviewMode = () => {
+		for (const t of previewTabs) {
+			const on = t.dataset.mode === previewMode;
+			t.classList.toggle("active", on);
+			t.setAttribute("aria-selected", String(on));
+		}
+		preview_div.hidden = previewMode !== "alloy";
+		preview_math.hidden = previewMode !== "math";
+		if (previewMode === "alloy") previewCm.refresh();
+	};
+	for (const t of previewTabs) {
+		t.addEventListener("click", () => {
+			previewMode = t.dataset.mode === "math" ? "math" : "alloy";
+			try { localStorage.setItem("shakudo-preview-mode", previewMode); } catch (e) {}
+			applyPreviewMode();
+		});
+	}
+	applyPreviewMode();
+
+	const escHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	function renderMath(w: TabWorkspace | null, err: CompileError | null) {
+		let formulas: string[] = [];
+		if (w) {
+			try {
+				formulas = workspaceToMath(w.workspace);
+			} catch (e) {
+				console.error(e);
+			}
+		}
+		const note = err ? `<p class="math_error">won't compile: ${escHtml(err.note)}</p>` : "";
+		const body = formulas.length
+			? formulas.map((f) => `<p class="math_formula">${f}</p>`).join("")
+			: `<p class="math_empty">${w ? "No blocks in this tab yet." : "This file has no block tabs."}</p>`;
+		preview_math.innerHTML = note + body;
+	}
+
 	// Extra root blocks get Blockly's warning icon, live
 	function setRootWarnings(w: TabWorkspace, err: CompileError | null) {
 		const warn = err && err.kind === "roots" ? err.blocks : [];
@@ -667,6 +708,7 @@ window.onload = () => {
 		if(selected_index === -1 || !listBlocklyWorkplaces[selected_index]) {
 			preview_title.textContent = "Alloy preview";
 			previewCm.setValue("-- This file has no block tabs.");
+			renderMath(null, null);
 			return;
 		}
 		const w = listBlocklyWorkplaces[selected_index];
@@ -682,6 +724,7 @@ window.onload = () => {
 		const lines = BlocklyParse.assembleRegion(regionLines(w.block_index), code);
 		if(err) lines.unshift(`-- won't compile: ${err.note}`);
 		preview_title.textContent = w.title;
+		renderMath(w, err);
 		previewCm.setValue(lines.join("\n"));
 		if(err) previewCm.markText({line: 0, ch: 0}, {line: 0, ch: lines[0].length}, {className: "preview_error"});
 		lines.forEach((l, i) => {
